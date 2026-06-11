@@ -1,6 +1,5 @@
 node_modules/
 dist/
-store/*.db
-store/settings.json
+store/
 .env
 *.log
