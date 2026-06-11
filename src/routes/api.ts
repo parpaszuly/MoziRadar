@@ -587,6 +587,80 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
+    // POST /api/media-scan -- scan /media folder and import video files
+    if (path === '/api/media-scan' && method === 'POST') {
+      let body: { adminId?: unknown }
+      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch { body = {} }
+      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
+        json(ctx.res, { error: 'Csak admin futtathatja' }, 403); return true
+      }
+      const { readdir, stat } = await import('fs/promises')
+      const { join, extname, basename } = await import('path')
+      const VIDEO_EXTS = new Set(['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv', '.ts', '.m2ts'])
+
+      async function collectFiles(dir: string, depth = 0): Promise<string[]> {
+        if (depth > 3) return []
+        let entries: import('fs').Dirent[]
+        try { entries = await readdir(dir, { withFileTypes: true }) as import('fs').Dirent[] } catch { return [] }
+        const files: string[] = []
+        for (const e of entries) {
+          const name = String(e.name)
+          if (e.isDirectory() && depth < 3) files.push(...await collectFiles(join(dir, name), depth + 1))
+          else if (e.isFile() && VIDEO_EXTS.has(extname(name).toLowerCase())) files.push(join(dir, name))
+        }
+        return files
+      }
+
+      function parseFilename(filename: string): { title: string; year: number | null; type: 'film' | 'series' } {
+        let name = basename(filename, extname(filename))
+        // Remove common junk tags
+        name = name.replace(/\[.*?\]/g, '').replace(/\((?:19|20)\d{2}\)/g, m => { return m }).trim()
+        // Extract year
+        const yearMatch = name.match(/(?:^|\D)((?:19|20)\d{2})(?:\D|$)/)
+        const year = yearMatch ? parseInt(yearMatch[1], 10) : null
+        // Remove year and everything after common quality markers
+        let title = name
+          .replace(/(?:19|20)\d{2}.*$/, '')
+          .replace(/\b(?:1080p|720p|4K|HDR|BluRay|BDRip|WEB|WEBRip|HDTV|x264|x265|HEVC|AAC|DTS|AC3)\b.*/i, '')
+          .replace(/[._\-]+/g, ' ')
+          .trim()
+        if (!title) title = basename(filename, extname(filename))
+        // Heuristic: series often have S01E01 pattern
+        const isSeries = /S\d{2}E\d{2}/i.test(basename(filename))
+        // Strip episode info for series title
+        if (isSeries) title = title.replace(/\s*S\d{2}.*$/i, '').trim()
+        return { title, year, type: isSeries ? 'series' : 'film' }
+      }
+
+      const MEDIA_DIR = '/media'
+      const files = await collectFiles(MEDIA_DIR)
+      if (files.length === 0) {
+        json(ctx.res, { ok: true, added: 0, skipped: 0, message: 'Üres mappa vagy nincs csatolva (MEDIA_PATH)' })
+        return true
+      }
+
+      let added = 0; let skipped = 0
+      const seen = new Set<string>()
+      for (const file of files) {
+        const { title, year, type } = parseFilename(file)
+        const key = `${title.toLowerCase()}|${year}`
+        if (seen.has(key)) { skipped++; continue }
+        seen.add(key)
+        if (findMediaItemByTitleYear(title, year)) { skipped++; continue }
+        const item = createMediaItem({ type, title, year: year ?? undefined, source: 'scan' })
+        try {
+          const enrichment = await tmdbSearch(type, title)
+          if (enrichment.tmdb_id) {
+            const [cast, details] = await Promise.all([tmdbFetchCast(type, enrichment.tmdb_id), tmdbFetchDetails(type, enrichment.tmdb_id)])
+            updateMediaItemEnrichment(item.id, { tmdb_id: enrichment.tmdb_id, poster_url: enrichment.poster_url ?? undefined, overview: enrichment.overview ?? undefined, year: enrichment.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
+          }
+        } catch { /* TMDB failure tolerated, item stays without enrichment */ }
+        added++
+      }
+      json(ctx.res, { ok: true, added, skipped, total: files.length })
+      return true
+    }
+
   } catch {
     json(ctx.res, { error: 'Szerver hiba' }, 500)
     return true

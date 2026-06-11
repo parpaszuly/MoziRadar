@@ -703,6 +703,12 @@ function renderKatalogTab() {
     <div id="addItemResult"></div>
   </div>
   <div class="mozi-admin-section">
+    <div class="mozi-block-header">Helyi filmek beolvasása</div>
+    <p class="mozi-admin-hint">Beolvassa a csatolt mappát (MEDIA_PATH a .env fájlban), fájlnevekből megkeresi a TMDB adatokat és hozzáadja a katalógushoz.</p>
+    <button class="mozi-btn-ghost" id="mediaScanBtn" onclick="runMediaScan()">Filmek beolvasása</button>
+    <div id="mediaScanResult"></div>
+  </div>
+  <div class="mozi-admin-section">
     <div class="mozi-block-header">Poszterek</div>
     <p class="mozi-admin-hint">Poszter nélküli tételek TMDB backfill-je.</p>
     <button class="mozi-btn-ghost" id="backfillBtn" onclick="runBackfill()">Poszterek frissítése</button>
@@ -798,6 +804,36 @@ async function addCatalogItem() {
     if (titleEl) titleEl.value = ''
   } catch (err) {
     if (resultEl) resultEl.innerHTML = `<div class="mozi-admin-err">Hiba: ${escapeHtml(err.message)}</div>`
+  }
+}
+
+async function runMediaScan() {
+  if (!activeUser?.is_admin) return
+  const btn = document.getElementById('mediaScanBtn')
+  const resultEl = document.getElementById('mediaScanResult')
+  if (btn) { btn.disabled = true; btn.textContent = 'Beolvasás...' }
+  if (resultEl) resultEl.innerHTML = '<div class="mozi-admin-hint">Ez eltarthat egy ideig (TMDB keresések)...</div>'
+  try {
+    const data = await apiFetch('/api/media-scan', {
+      method: 'POST',
+      body: JSON.stringify({ adminId: activeUser.id }),
+    })
+    if (resultEl) {
+      if (data.added === 0 && data.skipped === 0) {
+        resultEl.innerHTML = `<div class="mozi-admin-hint">${escapeHtml(data.message || 'Nincs új fájl.')}</div>`
+      } else {
+        resultEl.innerHTML = `<div class="mozi-admin-ok">Hozzáadva: ${data.added}, már létező: ${data.skipped} (${data.total} fájl)</div>`
+      }
+    }
+    if (data.added > 0) {
+      const catalogData = await apiFetch('/api/catalog')
+      catalogItems = normalizeCatalog(catalogData)
+      renderCatalog()
+    }
+  } catch (err) {
+    if (resultEl) resultEl.innerHTML = `<div class="mozi-admin-err">Hiba: ${escapeHtml(err.message)}</div>`
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Filmek beolvasása' }
   }
 }
 
