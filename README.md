@@ -23,9 +23,26 @@ Az első megnyitáskor a setup wizard kéri:
 - **TMDB API kulcs** (ingyenes, [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api))
 - **AI ajánló** (opcionális -- Claude, OpenAI, DeepSeek, Gemini)
 
+## Helyi filmek beolvasása (opcionális)
+
+Hozz létre `.env` fájlt a mappában (a `.env.example` alapján):
+
+```
+MEDIA_PATH=D:\Filmek
+```
+
+Majd indítsd újra:
+
+```bash
+docker compose up --build
+```
+
+Ezután az Admin -> Katalógus -> "Filmek beolvasása" gomb beolvassa a mappát, TMDB-n megkeresi a posztereket és hozzáadja a katalógushoz.
+
 ## Használat
 
 - Filmek/sorozatok hozzáadása: Admin gomb -> Katalógus
+- Helyi filmek beolvasása: Admin gomb -> Katalógus -> Filmek beolvasása
 - Új felhasználó (pl. partner): Admin gomb -> Felhasználók -> Új felhasználó
 - API kulcsok módosítása: Admin gomb -> Beállítások
 - AI ajánló generálás: Admin gomb -> Ajánló
