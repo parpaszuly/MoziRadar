@@ -6,6 +6,7 @@ services:
     volumes:
       - moziradar-data:/app/store
       - ${MEDIA_PATH:-./no-media}:/media:ro
+      - .:/app/hostconfig:rw
     environment:
       - HOST=0.0.0.0
       - PORT=3421

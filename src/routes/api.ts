@@ -587,6 +587,50 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
+    // GET /api/admin/media-path -- read current MEDIA_PATH from .env
+    if (path === '/api/admin/media-path' && method === 'GET') {
+      const adminId = parseInt(ctx.url.searchParams.get('adminId') ?? '', 10)
+      if (isNaN(adminId) || !getMediaUserById(adminId)?.is_admin) {
+        json(ctx.res, { error: 'Csak admin férhet hozzá' }, 403); return true
+      }
+      const { readFile } = await import('fs/promises')
+      let mediaPath = ''
+      try {
+        const env = await readFile('/app/hostconfig/.env', 'utf8')
+        const match = env.match(/^MEDIA_PATH=(.*)$/m)
+        if (match) mediaPath = match[1].trim()
+      } catch { /* no .env yet */ }
+      json(ctx.res, { mediaPath })
+      return true
+    }
+
+    // PATCH /api/admin/media-path -- write MEDIA_PATH to .env
+    if (path === '/api/admin/media-path' && method === 'PATCH') {
+      let body: { adminId?: unknown; mediaPath?: unknown }
+      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
+        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
+      }
+      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
+        json(ctx.res, { error: 'Csak admin módosíthat' }, 403); return true
+      }
+      const mediaPath = typeof body.mediaPath === 'string' ? body.mediaPath.trim() : ''
+      const { readFile, writeFile } = await import('fs/promises')
+      try {
+        let env = ''
+        try { env = await readFile('/app/hostconfig/.env', 'utf8') } catch { /* new file */ }
+        if (/^MEDIA_PATH=/m.test(env)) {
+          env = env.replace(/^MEDIA_PATH=.*$/m, `MEDIA_PATH=${mediaPath}`)
+        } else {
+          env = env ? `${env.trimEnd()}\nMEDIA_PATH=${mediaPath}\n` : `MEDIA_PATH=${mediaPath}\n`
+        }
+        await writeFile('/app/hostconfig/.env', env, 'utf8')
+        json(ctx.res, { ok: true, mediaPath, restartRequired: true })
+      } catch (err) {
+        json(ctx.res, { error: `Nem lehet írni: ${(err as Error).message}` }, 500)
+      }
+      return true
+    }
+
     // POST /api/media-scan -- scan /media folder and import video files
     if (path === '/api/media-scan' && method === 'POST') {
       let body: { adminId?: unknown }

@@ -687,6 +687,7 @@ function switchAdminTab(tab) {
                  tab === 'katalogus'    ? renderKatalogTab() :
                  tab === 'ajanlok'      ? renderAjanlokTab() :
                  renderBeallitasokTab()
+  if (tab === 'beallitasok') loadCurrentMediaPath()
 }
 
 function renderKatalogTab() {
@@ -737,6 +738,16 @@ function renderAjanlokTab() {
 
 function renderBeallitasokTab() {
   return `<div class="mozi-admin-section" id="beallitasokSection">
+    <div class="mozi-block-header">Média mappa</div>
+    <p class="mozi-admin-hint">A helyi filmek mappájának elérési útja. Mentés után újra kell indítani a Dockert.</p>
+    <div class="mozi-setup-field" style="margin-bottom:8px">
+      <label style="color:var(--text-muted);font-size:13px;font-weight:600">Mappa elérési útja</label>
+      <input type="text" id="bMediaPath" class="mozi-useradmin-name" placeholder="pl. D:\\Filmek" style="font-family:monospace">
+    </div>
+    <button class="mozi-btn-ghost" onclick="saveMediaPath()" style="margin-bottom:4px">Mappa mentése</button>
+    <div id="mediaPathResult" style="margin-top:6px;font-size:13px"></div>
+  </div>
+  <div class="mozi-admin-section">
     <div class="mozi-block-header">API kulcsok</div>
     <p class="mozi-admin-hint">A módosított mezőket menti, az üresen hagyottakat nem változtatja.</p>
     <div class="mozi-setup-field" style="margin-bottom:12px">
@@ -757,9 +768,34 @@ function renderBeallitasokTab() {
       <label style="color:var(--text-muted);font-size:13px;font-weight:600">AI API kulcs</label>
       <input type="text" id="bAiKey" class="mozi-useradmin-name" placeholder="Módosításhoz töltsd ki...">
     </div>
-    <button class="mozi-btn-primary" onclick="saveBeallitasok()">Mentés</button>
+    <button class="mozi-btn-primary" onclick="saveBeallitasok()">API kulcsok mentése</button>
     <div id="beallitasokResult" style="margin-top:10px;font-size:13px"></div>
   </div>`
+}
+
+async function loadCurrentMediaPath() {
+  if (!activeUser?.is_admin) return
+  try {
+    const data = await apiFetch(`/api/admin/media-path?adminId=${activeUser.id}`)
+    const el = document.getElementById('bMediaPath')
+    if (el && data.mediaPath) el.value = data.mediaPath
+  } catch { /* tolerated */ }
+}
+
+async function saveMediaPath() {
+  if (!activeUser?.is_admin) return
+  const path = document.getElementById('bMediaPath')?.value.trim()
+  const resultEl = document.getElementById('mediaPathResult')
+  if (!path) { if (resultEl) resultEl.textContent = 'Add meg a mappa elérési útját.'; return }
+  try {
+    const data = await apiFetch('/api/admin/media-path', {
+      method: 'PATCH',
+      body: JSON.stringify({ adminId: activeUser.id, mediaPath: path }),
+    })
+    if (resultEl) resultEl.innerHTML = `<span style="color:#22c55e">Mentve. Újraindítás szükséges:</span><br><code style="font-size:12px;background:var(--bg);padding:4px 8px;border-radius:4px;display:inline-block;margin-top:4px">docker compose up</code>`
+  } catch (err) {
+    if (resultEl) resultEl.innerHTML = `<span style="color:#ef4444">Hiba: ${escapeHtml(err.message)}</span>`
+  }
 }
 
 async function saveBeallitasok() {
