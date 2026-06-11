@@ -1363,6 +1363,45 @@ function init() {
     }
   })
 
+  // Setup wizard: AI provider toggle
+  document.getElementById('setupAiProvider').addEventListener('change', e => {
+    document.getElementById('setupAiKeyField').hidden = !e.target.value
+  })
+
+  // Setup wizard: form submit
+  document.getElementById('setupForm').addEventListener('submit', async e => {
+    e.preventDefault()
+    const errEl = document.getElementById('setupError')
+    errEl.hidden = true
+    const name = document.getElementById('setupName').value.trim()
+    const color = document.getElementById('setupColor').value
+    const tmdbKey = document.getElementById('setupTmdb').value.trim()
+    const aiProvider = document.getElementById('setupAiProvider').value
+    const aiKey = document.getElementById('setupAiKey').value.trim()
+    if (!name || !tmdbKey) return
+    try {
+      const res = await apiFetch('/api/setup', {
+        method: 'POST',
+        body: JSON.stringify({ name, color, tmdbKey, aiProvider: aiProvider || undefined, aiKey: aiKey || undefined })
+      })
+      activeUser = { id: res.user.id, key: res.user.key, name: res.user.name, color: res.user.color, is_admin: 1 }
+      localStorage.setItem('mozi_active_user', JSON.stringify(activeUser))
+      updateHeader()
+      await loadProfiles()
+      openLibrary()
+    } catch (err) {
+      errEl.textContent = err.message || 'Hiba történt'
+      errEl.hidden = false
+    }
+  })
+
+  // Check if first-run setup is needed
+  const setupStatus = await apiFetch('/api/setup/status')
+  if (setupStatus.needsSetup) {
+    showPage('pageSetup')
+    return
+  }
+
   restoreUser()
   loadProfiles()
 

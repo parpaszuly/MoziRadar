@@ -19,6 +19,46 @@
     </div>
   </header>
 
+  <!-- Setup wizard page (first run) -->
+  <div class="mozi-page" id="pageSetup">
+    <div class="mozi-picker-wrap">
+      <div class="mozi-picker-title">🎬 MoziRadar beállítás</div>
+      <div class="mozi-picker-sub">Első indítás -- töltsd ki az alábbi adatokat</div>
+      <form id="setupForm" class="mozi-setup-form">
+        <div class="mozi-setup-field">
+          <label for="setupName">Admin neve <span class="mozi-required">*</span></label>
+          <input type="text" id="setupName" placeholder="pl. Dani" required maxlength="32">
+        </div>
+        <div class="mozi-setup-field">
+          <label for="setupColor">Profilszín</label>
+          <input type="color" id="setupColor" value="#3B82F6">
+        </div>
+        <div class="mozi-setup-field">
+          <label for="setupTmdb">TMDB API kulcs <span class="mozi-required">*</span></label>
+          <input type="text" id="setupTmdb" placeholder="Szerezd meg: themoviedb.org/settings/api" required>
+          <small>Filmadatok és poszterek letöltéséhez szükséges (ingyenes)</small>
+        </div>
+        <div class="mozi-setup-section-title">AI ajánló (opcionális)</div>
+        <div class="mozi-setup-field">
+          <label for="setupAiProvider">AI szolgáltató</label>
+          <select id="setupAiProvider">
+            <option value="">-- nincs --</option>
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="openai">OpenAI / ChatGPT</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </div>
+        <div class="mozi-setup-field" id="setupAiKeyField" hidden>
+          <label for="setupAiKey">AI API kulcs</label>
+          <input type="text" id="setupAiKey" placeholder="sk-...">
+        </div>
+        <button type="submit" class="mozi-btn-primary mozi-setup-submit">Indítás</button>
+        <div class="mozi-setup-error" id="setupError" hidden></div>
+      </form>
+    </div>
+  </div>
+
   <!-- Profile picker page -->
   <div class="mozi-page active" id="pagePicker">
     <div class="mozi-picker-wrap">
