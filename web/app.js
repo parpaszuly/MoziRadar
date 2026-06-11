@@ -662,13 +662,15 @@ function renderAdminPanel(tab) {
     { id: 'felhasznalok', label: 'Felhasználók' },
     { id: 'katalogus',    label: 'Katalógus' },
     { id: 'ajanlok',      label: 'Ajánló' },
+    { id: 'beallitasok',  label: 'Beállítások' },
   ]
   const tabsHtml = tabs.map(t =>
     `<button class="mozi-admin-tab${t.id === tab ? ' active' : ''}" data-tab="${t.id}" onclick="switchAdminTab('${t.id}')">${t.label}</button>`
   ).join('')
   const content = tab === 'felhasznalok' ? renderUserAdminBody() :
                   tab === 'katalogus'    ? renderKatalogTab() :
-                  renderAjanlokTab()
+                  tab === 'ajanlok'      ? renderAjanlokTab() :
+                  renderBeallitasokTab()
   return `<div class="mozi-admin-panel">
     <h2 class="mozi-useradmin-title">Admin</h2>
     <div class="mozi-admin-tabs">${tabsHtml}</div>
@@ -683,7 +685,8 @@ function switchAdminTab(tab) {
   if (!el) return
   el.innerHTML = tab === 'felhasznalok' ? renderUserAdminBody() :
                  tab === 'katalogus'    ? renderKatalogTab() :
-                 renderAjanlokTab()
+                 tab === 'ajanlok'      ? renderAjanlokTab() :
+                 renderBeallitasokTab()
 }
 
 function renderKatalogTab() {
@@ -713,8 +716,7 @@ function renderAjanlokTab() {
     <p class="mozi-admin-hint mozi-admin-warn">Figyelem: a Mentés LECSERÉLI az adott közönség teljes ajánlólistáját.</p>
     <div class="mozi-admin-row" style="margin-bottom:14px">
       <select id="ajanlokAudience" class="mozi-useradmin-name" style="flex:0 0 120px">
-        <option value="dani">Dani</option>
-        <option value="feleseg">Feleség</option>
+        ${usersCache.map(u => `<option value="${escapeHtml(u.key)}">${escapeHtml(u.name)}</option>`).join('')}
         <option value="kozos">Közös</option>
       </select>
       <button class="mozi-btn-ghost" onclick="loadAjanlokEditor()">Betöltés</button>
@@ -725,6 +727,55 @@ function renderAjanlokTab() {
       <button class="mozi-btn-primary" onclick="saveAjanlokEditor()">Mentés (lista lecserélése)</button>
     </div>
   </div>`
+}
+
+function renderBeallitasokTab() {
+  return `<div class="mozi-admin-section" id="beallitasokSection">
+    <div class="mozi-block-header">API kulcsok</div>
+    <p class="mozi-admin-hint">A módosított mezőket menti, az üresen hagyottakat nem változtatja.</p>
+    <div class="mozi-setup-field" style="margin-bottom:12px">
+      <label style="color:var(--text-muted);font-size:13px;font-weight:600">TMDB API kulcs</label>
+      <input type="text" id="bTmdb" class="mozi-useradmin-name" placeholder="Módosításhoz töltsd ki...">
+    </div>
+    <div class="mozi-setup-field" style="margin-bottom:12px">
+      <label style="color:var(--text-muted);font-size:13px;font-weight:600">AI szolgáltató</label>
+      <select id="bAiProvider" class="mozi-useradmin-name">
+        <option value="">-- nincs változtatás --</option>
+        <option value="claude">Claude (Anthropic)</option>
+        <option value="openai">OpenAI</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="gemini">Google Gemini</option>
+      </select>
+    </div>
+    <div class="mozi-setup-field" style="margin-bottom:16px">
+      <label style="color:var(--text-muted);font-size:13px;font-weight:600">AI API kulcs</label>
+      <input type="text" id="bAiKey" class="mozi-useradmin-name" placeholder="Módosításhoz töltsd ki...">
+    </div>
+    <button class="mozi-btn-primary" onclick="saveBeallitasok()">Mentés</button>
+    <div id="beallitasokResult" style="margin-top:10px;font-size:13px"></div>
+  </div>`
+}
+
+async function saveBeallitasok() {
+  if (!activeUser?.is_admin) return
+  const tmdbKey = document.getElementById('bTmdb')?.value.trim()
+  const aiProvider = document.getElementById('bAiProvider')?.value
+  const aiKey = document.getElementById('bAiKey')?.value.trim()
+  const resultEl = document.getElementById('beallitasokResult')
+  const body = { adminId: activeUser.id }
+  if (tmdbKey) body.tmdb_api_key = tmdbKey
+  if (aiProvider) body.ai_provider = aiProvider
+  if (aiKey) body.ai_api_key = aiKey
+  if (Object.keys(body).length === 1) { if (resultEl) resultEl.textContent = 'Nincs változtatás.'; return }
+  try {
+    await apiFetch('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(body) })
+    if (resultEl) resultEl.innerHTML = '<span style="color:#22c55e">Mentve.</span>'
+    document.getElementById('bTmdb').value = ''
+    document.getElementById('bAiKey').value = ''
+    document.getElementById('bAiProvider').value = ''
+  } catch (err) {
+    if (resultEl) resultEl.innerHTML = `<span style="color:#ef4444">Hiba: ${escapeHtml(err.message)}</span>`
+  }
 }
 
 async function addCatalogItem() {
