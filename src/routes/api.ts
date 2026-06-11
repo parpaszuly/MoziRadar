@@ -638,56 +638,87 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
         json(ctx.res, { error: 'Csak admin futtathatja' }, 403); return true
       }
-      const { readdir, stat } = await import('fs/promises')
-      const { join, extname, basename } = await import('path')
+      const { readdir } = await import('fs/promises')
+      const { join, extname, basename, dirname, relative } = await import('path')
       const VIDEO_EXTS = new Set(['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv', '.ts', '.m2ts'])
 
-      async function collectFiles(dir: string, depth = 0): Promise<string[]> {
-        if (depth > 3) return []
+      // Collect video files grouped by their immediate parent directory
+      // Returns Map<dirPath, string[]> (dir -> list of video files in that dir)
+      async function collectByDir(dir: string, depth = 0): Promise<Map<string, string[]>> {
+        const result = new Map<string, string[]>()
+        if (depth > 4) return result
         let entries: import('fs').Dirent[]
-        try { entries = await readdir(dir, { withFileTypes: true }) as import('fs').Dirent[] } catch { return [] }
-        const files: string[] = []
+        try { entries = await readdir(dir, { withFileTypes: true }) as import('fs').Dirent[] } catch { return result }
+        const localVideos: string[] = []
         for (const e of entries) {
           const name = String(e.name)
-          if (e.isDirectory() && depth < 3) files.push(...await collectFiles(join(dir, name), depth + 1))
-          else if (e.isFile() && VIDEO_EXTS.has(extname(name).toLowerCase())) files.push(join(dir, name))
+          if (e.isDirectory()) {
+            const sub = await collectByDir(join(dir, name), depth + 1)
+            sub.forEach((v, k) => result.set(k, v))
+          } else if (e.isFile() && VIDEO_EXTS.has(extname(name).toLowerCase())) {
+            localVideos.push(join(dir, name))
+          }
         }
-        return files
+        if (localVideos.length > 0) result.set(dir, localVideos)
+        return result
       }
 
-      function parseFilename(filename: string): { title: string; year: number | null; type: 'film' | 'series' } {
-        let name = basename(filename, extname(filename))
-        // Remove common junk tags
-        name = name.replace(/\[.*?\]/g, '').replace(/\((?:19|20)\d{2}\)/g, m => { return m }).trim()
-        // Extract year
+      function cleanTitle(raw: string): { title: string; year: number | null } {
+        let name = raw.replace(/\[.*?\]/g, '').trim()
         const yearMatch = name.match(/(?:^|\D)((?:19|20)\d{2})(?:\D|$)/)
         const year = yearMatch ? parseInt(yearMatch[1], 10) : null
-        // Remove year and everything after common quality markers
         let title = name
           .replace(/(?:19|20)\d{2}.*$/, '')
-          .replace(/\b(?:1080p|720p|4K|HDR|BluRay|BDRip|WEB|WEBRip|HDTV|x264|x265|HEVC|AAC|DTS|AC3)\b.*/i, '')
+          .replace(/\b(?:1080p|720p|2160p|4K|HDR|BluRay|BDRip|WEB|WEBRip|HDTV|x264|x265|HEVC|AAC|DTS|AC3|REMUX)\b.*/i, '')
           .replace(/[._\-]+/g, ' ')
           .trim()
-        if (!title) title = basename(filename, extname(filename))
-        // Heuristic: series often have S01E01 pattern
-        const isSeries = /S\d{2}E\d{2}/i.test(basename(filename))
-        // Strip episode info for series title
-        if (isSeries) title = title.replace(/\s*S\d{2}.*$/i, '').trim()
-        return { title, year, type: isSeries ? 'series' : 'film' }
+        if (!title) title = raw.replace(/[._\-]+/g, ' ').trim()
+        return { title, year }
       }
 
       const MEDIA_DIR = '/media'
-      const files = await collectFiles(MEDIA_DIR)
-      if (files.length === 0) {
+      const byDir = await collectByDir(MEDIA_DIR)
+      if (byDir.size === 0) {
         json(ctx.res, { ok: true, added: 0, skipped: 0, message: 'Üres mappa vagy nincs csatolva (MEDIA_PATH)' })
         return true
       }
 
+      // Build candidate list: folders with >1 video = series (use folder name); single file = film (use filename)
+      type Candidate = { title: string; year: number | null; type: 'film' | 'series' }
+      const candidates: Candidate[] = []
+      for (const [dir, files] of byDir) {
+        if (dir === MEDIA_DIR) {
+          // Files directly in root: each is its own film
+          for (const f of files) {
+            const { title, year } = cleanTitle(basename(f, extname(f)))
+            candidates.push({ title, year, type: 'film' })
+          }
+        } else {
+          const dirName = basename(dir)
+          const parentDir = basename(dirname(dir))
+          // If parent dir is a season folder (Season 1, S01, Évad 1, etc.), go up one more
+          const isSeasonDir = /^(season|évad|sorozat|series|s)\s*\d+$/i.test(dirName) || /^S\d{2}$/i.test(dirName)
+          if (isSeasonDir) {
+            // The grandparent dir name is the series title
+            const { title, year } = cleanTitle(parentDir)
+            candidates.push({ title, year, type: 'series' })
+          } else if (files.length > 1) {
+            // Multiple files in a non-season folder = series, use folder name
+            const { title, year } = cleanTitle(dirName)
+            candidates.push({ title, year, type: 'series' })
+          } else {
+            // Single file in a subfolder: use file name, likely a film in its own folder
+            const { title, year } = cleanTitle(basename(files[0], extname(files[0])))
+            candidates.push({ title, year, type: 'film' })
+          }
+        }
+      }
+
+      // Dedup by (title, year) and import
       let added = 0; let skipped = 0
       const seen = new Set<string>()
-      for (const file of files) {
-        const { title, year, type } = parseFilename(file)
-        const key = `${title.toLowerCase()}|${year}`
+      for (const { title, year, type } of candidates) {
+        const key = `${title.toLowerCase()}|${year ?? ''}`
         if (seen.has(key)) { skipped++; continue }
         seen.add(key)
         if (findMediaItemByTitleYear(title, year)) { skipped++; continue }
@@ -698,10 +729,10 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
             const [cast, details] = await Promise.all([tmdbFetchCast(type, enrichment.tmdb_id), tmdbFetchDetails(type, enrichment.tmdb_id)])
             updateMediaItemEnrichment(item.id, { tmdb_id: enrichment.tmdb_id, poster_url: enrichment.poster_url ?? undefined, overview: enrichment.overview ?? undefined, year: enrichment.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
           }
-        } catch { /* TMDB failure tolerated, item stays without enrichment */ }
+        } catch { /* TMDB failure tolerated */ }
         added++
       }
-      json(ctx.res, { ok: true, added, skipped, total: files.length })
+      json(ctx.res, { ok: true, added, skipped, total: candidates.length })
       return true
     }
 
