@@ -758,10 +758,10 @@ function renderBeallitasokTab() {
       <label style="color:var(--text-muted);font-size:13px;font-weight:600">AI szolgáltató</label>
       <select id="bAiProvider" class="mozi-useradmin-name">
         <option value="">-- nincs változtatás --</option>
-        <option value="claude">Claude (Anthropic)</option>
-        <option value="openai">OpenAI</option>
-        <option value="deepseek">DeepSeek</option>
-        <option value="gemini">Google Gemini</option>
+        <option value="claude">Claude (Anthropic) — Haiku 4.5</option>
+        <option value="openai">OpenAI — GPT-4o mini</option>
+        <option value="deepseek">DeepSeek — deepseek-chat</option>
+        <option value="gemini">Google Gemini — gemini-2.0-flash-lite</option>
       </select>
     </div>
     <div class="mozi-setup-field" style="margin-bottom:16px">
