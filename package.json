@@ -1,0 +1,19 @@
+{
+  "name": "moziradar",
+  "version": "1.0.0",
+  "description": "Family film & series tracker — self-hosted, LAN-ready",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5"
+  }
+}

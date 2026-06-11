@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoziRadar</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="mozi-header">
+    <span class="mozi-logo">🎬 MoziRadar</span>
+    <div class="mozi-header-spacer"></div>
+    <div class="mozi-active-user" id="headerUser" hidden>
+      <div class="mozi-avatar-sm" id="headerAvatar"></div>
+      <span class="mozi-active-user-name" id="headerName"></span>
+      <button class="mozi-btn-ghost" id="headerAdminBtn" hidden>Felhasználók</button>
+      <button class="mozi-btn-ghost" id="headerSwitchBtn">Profilváltás</button>
+    </div>
+  </header>
+
+  <!-- Profile picker page -->
+  <div class="mozi-page active" id="pagePicker">
+    <div class="mozi-picker-wrap">
+      <div class="mozi-picker-title">Ki néz ma?</div>
+      <div class="mozi-picker-sub">Válassz profilt a folytatáshoz</div>
+      <div class="mozi-profiles-grid" id="profilesGrid">
+        <div class="mozi-loading">Betöltés...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Library page -->
+  <div class="mozi-page" id="pageLibrary">
+    <div class="mozi-library">
+      <div class="mozi-search-wrap">
+        <input type="text" id="moziSearch" class="mozi-search-input" placeholder="Film vagy sorozat keresése...">
+        <button id="moziSearchClear" class="mozi-search-clear" aria-label="Keresés törlése" hidden>&times;</button>
+      </div>
+      <div class="mozi-tabs-row">
+        <div class="mozi-tabs" id="catalogTabs">
+          <button class="mozi-tab active" data-tab="home">Home</button>
+          <button class="mozi-tab" data-tab="film">Filmek</button>
+          <button class="mozi-tab" data-tab="series">Sorozatok</button>
+          <button class="mozi-tab" data-tab="none">Neked új</button>
+          <button class="mozi-tab" data-tab="watchlist">Megnézném</button>
+          <button class="mozi-tab" data-tab="not_interested">Nem érdekel</button>
+          <button class="mozi-tab" data-tab="ajanlok">Ajánló</button>
+        </div>
+        <button class="mozi-btn-ghost mozi-triage-toggle" id="moziTriageToggle" hidden>Kijelölés</button>
+      </div>
+      <div class="mozi-catalog-grid" id="catalogGrid">
+        <div class="mozi-loading">Betöltés...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk triage bar (sticky bottom) -->
+  <div class="mozi-triage-bar" id="moziTriageBar" hidden>
+    <span class="mozi-triage-count" id="moziTriageCount">0 kijelölve</span>
+    <div class="mozi-triage-actions">
+      <button class="mozi-triage-action mozi-triage-action--seen"           data-bulk-state="seen">Láttam</button>
+      <button class="mozi-triage-action mozi-triage-action--watchlist"      data-bulk-state="watchlist">Megnézném</button>
+      <button class="mozi-triage-action mozi-triage-action--in_progress"    data-bulk-state="in_progress">Folyamatban</button>
+      <button class="mozi-triage-action mozi-triage-action--not_interested" data-bulk-state="not_interested">Nem érdekel</button>
+      <button class="mozi-triage-action mozi-triage-action--none"           data-bulk-state="none">Nincs</button>
+    </div>
+    <button class="mozi-btn-ghost" id="moziTriageCancel">Mégse</button>
+  </div>
+
+  <!-- Detail modal -->
+  <div class="mozi-modal-overlay" id="moziDetailOverlay" role="dialog" aria-modal="true">
+    <div class="mozi-modal" id="moziDetailModal">
+      <button class="mozi-modal-close" id="moziDetailClose" aria-label="Bezárás">&times;</button>
+      <div class="mozi-modal-body" id="moziDetailBody"></div>
+    </div>
+  </div>
+
+  <!-- User admin modal (admin only) -->
+  <div class="mozi-modal-overlay" id="moziUserAdminOverlay" role="dialog" aria-modal="true">
+    <div class="mozi-modal" id="moziUserAdminModal">
+      <button class="mozi-modal-close" id="moziUserAdminClose" aria-label="Bezárás">&times;</button>
+      <div class="mozi-modal-body" id="moziUserAdminBody"></div>
+    </div>
+  </div>
+
+  <div class="mozi-toast" id="moziToast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

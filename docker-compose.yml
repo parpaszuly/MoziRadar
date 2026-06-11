@@ -1,0 +1,19 @@
+services:
+  moziradar:
+    build: .
+    ports:
+      - "3421:3421"
+    volumes:
+      - moziradar-data:/app/store
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3421
+      - DB_PATH=/app/store/moziradar.db
+      # Optional: set API keys here, or configure them in the admin UI after first run
+      # - TMDB_API_KEY=your_key_here
+      # - AI_PROVIDER=claude
+      # - AI_API_KEY=your_key_here
+    restart: unless-stopped
+
+volumes:
+  moziradar-data:
