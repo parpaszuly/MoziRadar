@@ -14,3 +14,8 @@ export function readBody(req: http.IncomingMessage): Promise<Buffer> {
     req.on('error', reject)
   })
 }
+
+export async function parseBody<T>(req: http.IncomingMessage, res: http.ServerResponse): Promise<T | null> {
+  try { return JSON.parse((await readBody(req)).toString()) as T }
+  catch { json(res, { error: 'Érvénytelen JSON' }, 400); return null }
+}

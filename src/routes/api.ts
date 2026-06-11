@@ -17,8 +17,18 @@ import {
 } from '../db.js'
 import { tmdbSearch, tmdbFetchCast, tmdbFetchDetails, runBackfill } from '../tmdb.js'
 import { generateRecommendations } from '../ai.js'
-import { json, readBody } from './helpers.js'
+import { json, parseBody } from './helpers.js'
 import type { RouteContext } from './types.js'
+import type http from 'node:http'
+
+function requireAdmin(res: http.ServerResponse, val: unknown): boolean {
+  const id = typeof val === 'number' ? val : parseInt(String(val ?? ''), 10)
+  if (isNaN(id) || !getMediaUserById(id)?.is_admin) {
+    json(res, { error: 'Csak admin' }, 403)
+    return false
+  }
+  return true
+}
 
 interface RecommendedItem {
   id: number; type: string; title: string; year: number | null
@@ -102,22 +112,15 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
 
     // ---- Setup wizard ----
 
-    // GET /api/setup/status
     if (path === '/api/setup/status' && method === 'GET') {
-      const needsSetup = !hasAnyUsers()
-      json(ctx.res, { needsSetup })
+      json(ctx.res, { needsSetup: !hasAnyUsers() })
       return true
     }
 
-    // POST /api/setup -- first-run: create admin user + save API keys
     if (path === '/api/setup' && method === 'POST') {
-      if (hasAnyUsers()) {
-        json(ctx.res, { error: 'Már be van állítva' }, 400); return true
-      }
-      let body: { name?: unknown; color?: unknown; tmdbKey?: unknown; aiProvider?: unknown; aiKey?: unknown; aiBaseUrl?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
+      if (hasAnyUsers()) { json(ctx.res, { error: 'Már be van állítva' }, 400); return true }
+      const body = await parseBody<{ name?: unknown; color?: unknown; tmdbKey?: unknown; aiProvider?: unknown; aiKey?: unknown; aiBaseUrl?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
       if (typeof body.name !== 'string' || !body.name.trim()) {
         json(ctx.res, { error: 'name kötelező' }, 400); return true
       }
@@ -133,37 +136,23 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
 
     // ---- Admin settings ----
 
-    // GET /api/admin/settings?adminId=<id>
     if (path === '/api/admin/settings' && method === 'GET') {
-      const adminId = parseInt(ctx.url.searchParams.get('adminId') ?? '', 10)
-      if (isNaN(adminId) || !getMediaUserById(adminId)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin férhet hozzá' }, 403); return true
-      }
+      if (!requireAdmin(ctx.res, ctx.url.searchParams.get('adminId'))) return true
       const settings = getAllSettings()
-      // Mask API keys partially
       const masked = { ...settings }
-      if (masked.ai_api_key && masked.ai_api_key.length > 8) {
+      if (masked.ai_api_key && masked.ai_api_key.length > 8)
         masked.ai_api_key = masked.ai_api_key.slice(0, 4) + '...' + masked.ai_api_key.slice(-4)
-      }
-      if (masked.tmdb_api_key && masked.tmdb_api_key.length > 8) {
+      if (masked.tmdb_api_key && masked.tmdb_api_key.length > 8)
         masked.tmdb_api_key = masked.tmdb_api_key.slice(0, 4) + '...' + masked.tmdb_api_key.slice(-4)
-      }
       json(ctx.res, { settings: masked })
       return true
     }
 
-    // PATCH /api/admin/settings -- update one or more settings
     if (path === '/api/admin/settings' && method === 'PATCH') {
-      let body: Record<string, unknown>
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      const adminId = typeof body.adminId === 'number' ? body.adminId : NaN
-      if (isNaN(adminId) || !getMediaUserById(adminId)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin módosíthat beállítást' }, 403); return true
-      }
-      const allowed = ['tmdb_api_key', 'ai_provider', 'ai_api_key', 'ai_base_url']
-      for (const key of allowed) {
+      const body = await parseBody<Record<string, unknown>>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
+      for (const key of ['tmdb_api_key', 'ai_provider', 'ai_api_key', 'ai_base_url']) {
         if (typeof body[key] === 'string') setSetting(key, (body[key] as string).trim())
       }
       json(ctx.res, { ok: true })
@@ -172,21 +161,15 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
 
     // ---- Users ----
 
-    // GET /api/users
     if (path === '/api/users' && method === 'GET') {
       json(ctx.res, { users: listMediaUsers() })
       return true
     }
 
-    // POST /api/users
     if (path === '/api/users' && method === 'POST') {
-      let body: { adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      if (isNaN(typeof body.adminId === 'number' ? body.adminId : NaN) || !getMediaUserById(body.adminId as number)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin hozhat létre felhasználót' }, 403); return true
-      }
+      const body = await parseBody<{ adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
       if (typeof body.name !== 'string' || !body.name.trim()) {
         json(ctx.res, { error: 'name kötelező' }, 400); return true
       }
@@ -198,18 +181,12 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // PATCH /api/users/:id
     const userPatchMatch = path.match(/^\/api\/users\/(\d+)$/)
     if (userPatchMatch && method === 'PATCH') {
       const targetId = parseInt(userPatchMatch[1], 10)
-      let body: { adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      const adminId = typeof body.adminId === 'number' ? body.adminId : NaN
-      if (isNaN(adminId) || !getMediaUserById(adminId)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin szerkeszthet felhasználót' }, 403); return true
-      }
+      const body = await parseBody<{ adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
       const data: { name?: string; color?: string; avatar?: string | null } = {}
       if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
       if (body.color !== undefined) {
@@ -227,7 +204,6 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
 
     // ---- Catalog ----
 
-    // GET /api/catalog
     if (path === '/api/catalog' && method === 'GET') {
       const items = listMediaCatalog().map(item => ({
         ...item,
@@ -238,15 +214,10 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // POST /api/catalog
     if (path === '/api/catalog' && method === 'POST') {
-      let body: { adminId?: unknown; type?: unknown; title?: unknown; notes?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin adhat hozzá tételt' }, 403); return true
-      }
+      const body = await parseBody<{ adminId?: unknown; type?: unknown; title?: unknown; notes?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
       if (!body.type || !['film', 'series'].includes(body.type as string)) {
         json(ctx.res, { error: 'type kötelező: film vagy series' }, 400); return true
       }
@@ -281,33 +252,44 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // PATCH /api/catalog/:id
-    const catalogPatchMatch = path.match(/^\/api\/catalog\/(\d+)$/)
-    if (catalogPatchMatch && method === 'PATCH') {
-      let body: { adminId?: unknown } & Partial<Pick<MediaItem, 'title' | 'year' | 'poster_url' | 'overview' | 'notes'>>
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin szerkeszthet tételt' }, 403); return true
-      }
-      const id = parseInt(catalogPatchMatch[1], 10)
+    if (path === '/api/catalog/backfill' && method === 'POST') {
+      const body = await parseBody<{ adminId?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
+      const updated = await runBackfill(listItemsNeedingEnrichment, updateMediaItemEnrichment)
+      json(ctx.res, { ok: true, updated })
+      return true
+    }
+
+    const catalogItemMatch = path.match(/^\/api\/catalog\/(\d+)$/)
+
+    if (catalogItemMatch && method === 'PATCH') {
+      const body = await parseBody<{ adminId?: unknown } & Partial<Pick<MediaItem, 'title' | 'year' | 'poster_url' | 'overview' | 'notes'>>>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
+      const id = parseInt(catalogItemMatch[1], 10)
       const { adminId: _, ...patch } = body
-      if (!updateMediaItem(id, patch)) {
-        json(ctx.res, { error: 'Nem található' }, 404); return true
-      }
+      if (!updateMediaItem(id, patch)) { json(ctx.res, { error: 'Nem található' }, 404); return true }
       json(ctx.res, { ok: true, item: getMediaItem(id) })
       return true
     }
 
-    // POST /api/catalog/:id/rematch
+    if (catalogItemMatch && method === 'DELETE') {
+      const body = await parseBody<{ adminId?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
+      const id = parseInt(catalogItemMatch[1], 10)
+      const result = deleteMediaItem(id)
+      if (!result.deleted) { json(ctx.res, { error: 'Nem található' }, 404); return true }
+      json(ctx.res, { ok: true, deleted_id: id, title: result.title })
+      return true
+    }
+
     const rematchMatch = path.match(/^\/api\/catalog\/(\d+)\/rematch$/)
     if (rematchMatch && method === 'POST') {
-      let body: { adminId?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch { body = {} }
-      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin végezhet rematch-et' }, 403); return true
-      }
+      const body = await parseBody<{ adminId?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
       const id = parseInt(rematchMatch[1], 10)
       const item = getMediaItem(id)
       if (!item) { json(ctx.res, { error: 'Nem található' }, 404); return true }
@@ -332,55 +314,21 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // POST /api/catalog/backfill
-    if (path === '/api/catalog/backfill' && method === 'POST') {
-      let body: { adminId?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch { body = {} }
-      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin futtathat backfill-t' }, 403); return true
-      }
-      const updated = await runBackfill(listItemsNeedingEnrichment, updateMediaItemEnrichment)
-      json(ctx.res, { ok: true, updated })
-      return true
-    }
-
-    // DELETE /api/catalog/:id
-    const catalogDeleteMatch = path.match(/^\/api\/catalog\/(\d+)$/)
-    if (catalogDeleteMatch && method === 'DELETE') {
-      let body: { adminId?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      const adminId = typeof body.adminId === 'number' ? body.adminId : NaN
-      if (isNaN(adminId) || !getMediaUserById(adminId)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin törölhet' }, 403); return true
-      }
-      const id = parseInt(catalogDeleteMatch[1], 10)
-      const result = deleteMediaItem(id)
-      if (!result.deleted) { json(ctx.res, { error: 'Nem található' }, 404); return true }
-      json(ctx.res, { ok: true, deleted_id: id, title: result.title })
-      return true
-    }
-
     // ---- Status ----
 
-    // GET /api/status
     if (path === '/api/status' && method === 'GET') {
       json(ctx.res, { statuses: getAllMediaUserStatuses() })
       return true
     }
 
-    // PATCH /api/status/:media_id/:user_id
     const statusMatch = path.match(/^\/api\/status\/(\d+)\/(\d+)$/)
     if (statusMatch && method === 'PATCH') {
       const mediaId = parseInt(statusMatch[1], 10)
       const userId = parseInt(statusMatch[2], 10)
       if (!getMediaItem(mediaId)) { json(ctx.res, { error: 'media_id nem található' }, 404); return true }
       if (!getMediaUserById(userId)) { json(ctx.res, { error: 'user_id nem található' }, 404); return true }
-      let body: { state?: string; score?: number | null }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
+      const body = await parseBody<{ state?: string; score?: number | null }>(ctx.req, ctx.res)
+      if (!body) return true
       if (body.state !== undefined && !MEDIA_USER_VALID_STATES.has(body.state)) {
         json(ctx.res, { error: `state: ${[...MEDIA_USER_VALID_STATES].join(', ')}` }, 400); return true
       }
@@ -398,7 +346,6 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
 
     // ---- Recommendations ----
 
-    // GET /api/recommend?user=<id>
     if (path === '/api/recommend' && method === 'GET') {
       const userIdParam = parseInt(ctx.url.searchParams.get('user') ?? '', 10)
       if (isNaN(userIdParam)) { json(ctx.res, { error: 'user paraméter kötelező' }, 400); return true }
@@ -410,7 +357,6 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // GET /api/recommend/group?users=1,2,...
     if (path === '/api/recommend/group' && method === 'GET') {
       const usersParam = ctx.url.searchParams.get('users') ?? ''
       const groupIds = usersParam.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0)
@@ -436,12 +382,9 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // POST /api/recommend/refresh -- LLM-based rec regeneration
     if (path === '/api/recommend/refresh' && method === 'POST') {
-      let body: { userId?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
+      const body = await parseBody<{ userId?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
       const userId = typeof body.userId === 'number' ? body.userId : NaN
       const user = !isNaN(userId) ? getMediaUserById(userId) : undefined
       if (!user) { json(ctx.res, { error: 'userId nem található' }, 404); return true }
@@ -517,22 +460,16 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // GET /api/recommendations?audience=...
     if (path === '/api/recommendations' && method === 'GET') {
       const audience = ctx.url.searchParams.get('audience') ?? undefined
       json(ctx.res, { recommendations: listMediaRecommendations(audience) })
       return true
     }
 
-    // POST /api/recommendations (admin: replace for audience)
     if (path === '/api/recommendations' && method === 'POST') {
-      let body: { adminId?: unknown; audience?: unknown; items?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin szerkeszthet ajánlásokat' }, 403); return true
-      }
+      const body = await parseBody<{ adminId?: unknown; audience?: unknown; items?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
       if (typeof body.audience !== 'string' || !body.audience.trim()) {
         json(ctx.res, { error: 'audience kötelező' }, 400); return true
       }
@@ -544,14 +481,11 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // POST /api/recommendations/:recId/act
     const recActMatch = path.match(/^\/api\/recommendations\/(\d+)\/act$/)
     if (recActMatch && method === 'POST') {
       const recId = parseInt(recActMatch[1], 10)
-      let body: { userId?: unknown; state?: unknown; score?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
+      const body = await parseBody<{ userId?: unknown; state?: unknown; score?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
       const userId = typeof body.userId === 'number' ? body.userId : NaN
       if (isNaN(userId) || !getMediaUserById(userId)) {
         json(ctx.res, { error: 'userId nem található' }, 404); return true
@@ -588,12 +522,10 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // GET /api/admin/media-path -- read current MEDIA_PATH from .env
+    // ---- Admin: media path ----
+
     if (path === '/api/admin/media-path' && method === 'GET') {
-      const adminId = parseInt(ctx.url.searchParams.get('adminId') ?? '', 10)
-      if (isNaN(adminId) || !getMediaUserById(adminId)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin férhet hozzá' }, 403); return true
-      }
+      if (!requireAdmin(ctx.res, ctx.url.searchParams.get('adminId'))) return true
       const { readFile } = await import('fs/promises')
       let mediaPath = ''
       try {
@@ -605,15 +537,10 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // PATCH /api/admin/media-path -- write MEDIA_PATH to .env
     if (path === '/api/admin/media-path' && method === 'PATCH') {
-      let body: { adminId?: unknown; mediaPath?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch {
-        json(ctx.res, { error: 'Érvénytelen JSON' }, 400); return true
-      }
-      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin módosíthat' }, 403); return true
-      }
+      const body = await parseBody<{ adminId?: unknown; mediaPath?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
       const mediaPath = typeof body.mediaPath === 'string' ? body.mediaPath.trim() : ''
       const { readFile, writeFile } = await import('fs/promises')
       try {
@@ -632,19 +559,16 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-    // POST /api/media-scan -- scan /media folder and import video files
+    // ---- Media scan ----
+
     if (path === '/api/media-scan' && method === 'POST') {
-      let body: { adminId?: unknown }
-      try { body = JSON.parse((await readBody(ctx.req)).toString()) } catch { body = {} }
-      if (!getMediaUserById(typeof body.adminId === 'number' ? body.adminId : NaN)?.is_admin) {
-        json(ctx.res, { error: 'Csak admin futtathatja' }, 403); return true
-      }
+      const body = await parseBody<{ adminId?: unknown }>(ctx.req, ctx.res)
+      if (!body) return true
+      if (!requireAdmin(ctx.res, body.adminId)) return true
       const { readdir } = await import('fs/promises')
-      const { join, extname, basename, dirname, relative } = await import('path')
+      const { join, extname, basename, dirname } = await import('path')
       const VIDEO_EXTS = new Set(['.mkv', '.mp4', '.avi', '.m4v', '.mov', '.wmv', '.ts', '.m2ts'])
 
-      // Collect video files grouped by their immediate parent directory
-      // Returns Map<dirPath, string[]> (dir -> list of video files in that dir)
       async function collectByDir(dir: string, depth = 0): Promise<Map<string, string[]>> {
         const result = new Map<string, string[]>()
         if (depth > 4) return result
@@ -684,12 +608,10 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         return true
       }
 
-      // Build candidate list: folders with >1 video = series (use folder name); single file = film (use filename)
       type Candidate = { title: string; year: number | null; type: 'film' | 'series' }
       const candidates: Candidate[] = []
       for (const [dir, files] of byDir) {
         if (dir === MEDIA_DIR) {
-          // Files directly in root: each is its own film
           for (const f of files) {
             const { title, year } = cleanTitle(basename(f, extname(f)))
             candidates.push({ title, year, type: 'film' })
@@ -697,25 +619,20 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         } else {
           const dirName = basename(dir)
           const parentDir = basename(dirname(dir))
-          // If parent dir is a season folder (Season 1, S01, Évad 1, etc.), go up one more
           const isSeasonDir = /^(season|évad|sorozat|series|s)\s*\d+$/i.test(dirName) || /^S\d{2}$/i.test(dirName)
           if (isSeasonDir) {
-            // The grandparent dir name is the series title
             const { title, year } = cleanTitle(parentDir)
             candidates.push({ title, year, type: 'series' })
           } else if (files.length > 1) {
-            // Multiple files in a non-season folder = series, use folder name
             const { title, year } = cleanTitle(dirName)
             candidates.push({ title, year, type: 'series' })
           } else {
-            // Single file in a subfolder: use file name, likely a film in its own folder
             const { title, year } = cleanTitle(basename(files[0], extname(files[0])))
             candidates.push({ title, year, type: 'film' })
           }
         }
       }
 
-      // Dedup by (title, year) and import
       let added = 0; let skipped = 0
       const seen = new Set<string>()
       const seenTmdbIds = new Set<number>()
@@ -723,7 +640,6 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         const key = `${title.toLowerCase()}|${year ?? ''}`
         if (seen.has(key)) { skipped++; continue }
         seen.add(key)
-        // TMDB lookup first -- dedup by tmdb_id (catches "hrt project almanac" vs "Az Almanach Projekt" etc.)
         let tmdbResult: Awaited<ReturnType<typeof tmdbSearch>> | null = null
         try { tmdbResult = await tmdbSearch(type, title) } catch { /* tolerated */ }
         if (tmdbResult?.tmdb_id) {
