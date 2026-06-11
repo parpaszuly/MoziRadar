@@ -524,7 +524,7 @@ async function moziAdminDelete(mediaId) {
     await apiFetch(`/api/catalog/${mediaId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: activeUser.id }),
+      body: JSON.stringify({ adminId: activeUser.id }),
     })
     moziCloseDetail()
     catalogItems = catalogItems.filter(i => i.id !== mediaId)
