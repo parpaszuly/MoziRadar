@@ -9,6 +9,7 @@ import {
   getMediaRecommendationById, findMediaItemByTitleYear,
   getUserSeenProfile, getUserExcludedTitles,
   listItemsNeedingEnrichment,
+  findMediaItemByTmdbId,
   getAllSettings, getSetting, setSetting,
   hasAnyUsers,
   MEDIA_USER_VALID_STATES,
@@ -717,19 +718,27 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       // Dedup by (title, year) and import
       let added = 0; let skipped = 0
       const seen = new Set<string>()
+      const seenTmdbIds = new Set<number>()
       for (const { title, year, type } of candidates) {
         const key = `${title.toLowerCase()}|${year ?? ''}`
         if (seen.has(key)) { skipped++; continue }
         seen.add(key)
-        if (findMediaItemByTitleYear(title, year)) { skipped++; continue }
-        const item = createMediaItem({ type, title, year: year ?? undefined, source: 'scan' })
-        try {
-          const enrichment = await tmdbSearch(type, title)
-          if (enrichment.tmdb_id) {
-            const [cast, details] = await Promise.all([tmdbFetchCast(type, enrichment.tmdb_id), tmdbFetchDetails(type, enrichment.tmdb_id)])
-            updateMediaItemEnrichment(item.id, { tmdb_id: enrichment.tmdb_id, poster_url: enrichment.poster_url ?? undefined, overview: enrichment.overview ?? undefined, year: enrichment.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
-          }
-        } catch { /* TMDB failure tolerated */ }
+        // TMDB lookup first -- dedup by tmdb_id (catches "hrt project almanac" vs "Az Almanach Projekt" etc.)
+        let tmdbResult: Awaited<ReturnType<typeof tmdbSearch>> | null = null
+        try { tmdbResult = await tmdbSearch(type, title) } catch { /* tolerated */ }
+        if (tmdbResult?.tmdb_id) {
+          if (seenTmdbIds.has(tmdbResult.tmdb_id) || findMediaItemByTmdbId(tmdbResult.tmdb_id)) { skipped++; continue }
+          seenTmdbIds.add(tmdbResult.tmdb_id)
+        } else {
+          if (findMediaItemByTitleYear(title, year)) { skipped++; continue }
+        }
+        const item = createMediaItem({ type, title, year: (tmdbResult?.year ?? year) ?? undefined, source: 'scan' })
+        if (tmdbResult?.tmdb_id) {
+          try {
+            const [cast, details] = await Promise.all([tmdbFetchCast(type, tmdbResult.tmdb_id), tmdbFetchDetails(type, tmdbResult.tmdb_id)])
+            updateMediaItemEnrichment(item.id, { tmdb_id: tmdbResult.tmdb_id, poster_url: tmdbResult.poster_url ?? undefined, overview: tmdbResult.overview ?? undefined, year: tmdbResult.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
+          } catch { /* tolerated */ }
+        }
         added++
       }
       json(ctx.res, { ok: true, added, skipped, total: candidates.length })

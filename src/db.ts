@@ -235,6 +235,10 @@ export function findMediaItemByTitleYear(title: string, year: number | null): Me
   return db.prepare('SELECT * FROM media_items WHERE LOWER(title) = LOWER(?)').get(title) as MediaItem | undefined
 }
 
+export function findMediaItemByTmdbId(tmdbId: number): MediaItem | undefined {
+  return db.prepare('SELECT * FROM media_items WHERE tmdb_id = ?').get(tmdbId) as MediaItem | undefined
+}
+
 export function listItemsNeedingEnrichment(): MediaItem[] {
   return db.prepare('SELECT * FROM media_items WHERE poster_url IS NULL AND needs_review = 0 ORDER BY id').all() as MediaItem[]
 }
