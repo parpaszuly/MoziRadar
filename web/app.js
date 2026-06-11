@@ -1324,7 +1324,7 @@ function initSearch() {
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-function init() {
+async function init() {
   initSearch()
   initTabs()
   initTriageBar()
