@@ -131,7 +131,7 @@ Ezután megjelenik a főoldal a filmes profilválasztóval.
 ### Filmek / sorozatok hozzáadása
 
 **Kézzel (bármely felhasználó):**
-1. A könyvtár oldalon kattints a **"+ Hozzáadás"** gombra (a fülsor jobb szélén)
+1. A könyvtár oldalon kattints a **"+ Hozzáadás"** gombra (a kereső mellett)
 2. Válaszd a típust (film / sorozat) és írd be a címet
 3. Kattints **"Hozzáadás"** — a TMDB automatikusan megkeresi a poszterét és adatait
 
@@ -193,17 +193,21 @@ Az **"Ajánló"** fülön két módban kérhetsz AI ajánlókat:
 
 **1. Személyes ajánló (pontozások alapján)**
 - Kattints az **"AI ajánlókat kérek"** gombra
-- Az AI a pontozásaid és ízlés leírásod alapján ajánl 8–10 filmet/sorozatot
-- Az ajánlott filmek magyar TMDB névvel, poszterrel és indoklással jelennek meg
+- Az AI a pontozásaid és ízlés leírásod alapján ajánl 8 filmet/sorozatot
+- Az ajánlott filmek TMDB névvel, poszterrel és indoklással jelennek meg
 
 **2. Filmek alapján ajánló**
 - Kattints a **"Filmek alapján"** gombra
 - Egy felugró ablakban megjelennek a már látott filmjeid
 - Keress rájuk, és jelölj ki 1–3 filmet
 - Kattints az **"Ajánlást kérek"** gombra
-- Az AI az általad kijelölt filmekhez hasonlókat ajánl
+- Az AI kizárólag a kijelölt filmek stílusa, hangulata és témái alapján ajánl — az általános ízlés leírásod nem befolyásolja
+- A panel fejlécében látod, melyik filmek alapján készült az ajánló
 
-> **Hogyan működik az AI ajánló?** A látott és pontozott filmjeid alapján következtet az ízlésedre, figyelembe veszi az ízlés leírásodat (ha kitöltötted a profilodban), és kizárja amit már láttál vagy nem érdekelt.
+> **Hogyan működik az AI ajánló?**
+> - *Személyes mód:* A látott és pontozott filmjeid + ízlés leírásod alapján következtet az ízlésedre
+> - *Filmek alapján mód:* Kizárólag a kijelölt referencia filmekhez hasonlókat keres (stílus, hangulat, műfaj)
+> - Mindkét módban kizárja amit már láttál, watchlistre vagy "nem érdekel"-re tettél
 
 ---
 

@@ -203,11 +203,21 @@ body {
 
 /* Search bar */
 .mozi-search-wrap {
-  position: relative;
   display: flex;
   align-items: center;
-  max-width: 560px;
+  gap: 10px;
+  max-width: 700px;
   margin: 0 auto 28px;
+}
+.mozi-search-inner {
+  position: relative;
+  flex: 1;
+}
+.mozi-search-add-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 10px 20px;
+  height: 44px;
 }
 
 .mozi-search-input {
@@ -228,6 +238,8 @@ body {
 .mozi-search-clear {
   position: absolute;
   right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -491,7 +503,7 @@ body {
 .mozi-catalog-grid.mozi-catalog-blocks {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
 }
 
 .mozi-block-header {
@@ -503,6 +515,34 @@ body {
   border-bottom: 1px solid var(--border);
   letter-spacing: 0.01em;
 }
+
+/* Panel styling for catalog blocks */
+.mozi-catalog-block {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.mozi-catalog-block .mozi-block-header,
+.mozi-catalog-block .mozi-block-header--sub {
+  padding: 13px 20px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-input);
+  border-top: 3px solid var(--text-secondary);
+  border-left: none;
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: 0;
+}
+.mozi-catalog-block .mozi-catalog-grid {
+  padding: 16px 20px 20px;
+}
+/* Color variants for named blocks */
+.mozi-catalog-block.block--watchlist .mozi-block-header { border-top-color: var(--info); }
+.mozi-catalog-block.block--progress  .mozi-block-header { border-top-color: var(--accent); }
+.mozi-catalog-block.block--seen      .mozi-block-header { border-top-color: var(--success); }
+.mozi-catalog-block.block--ai        .mozi-block-header { border-top-color: var(--accent); }
 
 /* Grid padding when triage bar visible */
 body.triage-active #catalogGrid { padding-bottom: 72px; }
@@ -788,7 +828,28 @@ body.triage-active #catalogGrid { padding-bottom: 72px; }
 .mozi-admin-tab:hover { color: var(--text); }
 .mozi-admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-.mozi-admin-section { margin-bottom: 20px; }
+.mozi-admin-section {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  overflow: hidden;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+}
+.mozi-admin-section > .mozi-block-header {
+  padding: 13px 20px;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-input);
+  border-top: 3px solid var(--accent);
+  font-size: 14px;
+  color: var(--text);
+  letter-spacing: 0;
+}
+.mozi-admin-section > *:not(.mozi-block-header) {
+  margin-left: 20px;
+  margin-right: 20px;
+}
 
 .mozi-admin-row {
   display: flex;
@@ -805,6 +866,44 @@ body.triage-active #catalogGrid { padding-bottom: 72px; }
 .mozi-admin-warn { color: #f59e0b; }
 .mozi-admin-ok   { font-size: 12px; color: var(--success); padding: 6px 0; }
 .mozi-admin-err  { font-size: 12px; color: var(--danger);  padding: 6px 0; }
+
+/* Add item modal */
+.mozi-add-type-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.mozi-add-type-btn {
+  flex: 1;
+  padding: 11px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.mozi-add-type-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.mozi-add-large-input {
+  width: 100%;
+  height: 54px;
+  padding: 0 18px;
+  font-size: 16px;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--transition);
+  box-sizing: border-box;
+  display: block;
+  margin-bottom: 10px;
+}
+.mozi-add-large-input:focus { border-color: var(--accent); }
+.mozi-add-large-input::placeholder { color: var(--text-muted); }
+.mozi-add-submit-full { width: 100%; padding: 13px; font-size: 15px; }
 
 /* Catalog inline edit form */
 .mozi-admin-edit { max-width: 480px; }
@@ -935,10 +1034,57 @@ body.triage-active #catalogGrid { padding-bottom: 72px; }
 .mozi-ajanlok {
   display: flex;
   flex-direction: column;
-  gap: 36px;
+  gap: 24px;
 }
 
 .mozi-ajanlok-section { }
+
+/* Recommendation panels */
+.mozi-rec-panel {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.mozi-rec-panel-hd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-input);
+}
+.mozi-rec-panel--ai    .mozi-rec-panel-hd { border-top: 3px solid var(--accent); }
+.mozi-rec-panel--internal .mozi-rec-panel-hd { border-top: 3px solid #6a8fc8; }
+.mozi-rec-panel--group .mozi-rec-panel-hd { border-top: 3px solid var(--success); }
+.mozi-rec-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+.mozi-rec-panel-subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+.mozi-rec-panel-body {
+  padding: 20px;
+}
+.mozi-rec-panel-body > .mozi-catalog-grid { margin: 0; }
+
+/* Buttons inside panel headers need higher contrast against --bg-input */
+.mozi-rec-panel-hd .mozi-btn-ghost {
+  background: var(--bg-card);
+  border-color: var(--text-secondary);
+  color: var(--text);
+}
+.mozi-rec-panel-hd .mozi-btn-ghost:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* External rec card: no pointer, visually distinct (no popup/state) */
 .mozi-card--external { cursor: pointer; }

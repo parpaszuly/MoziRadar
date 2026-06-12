@@ -13,6 +13,7 @@ let selectedItems = new Set()
 let openDetailId = null   // media_id of currently open detail modal (null = closed)
 let recPersonalData = null  // cached GET /api/recommend response
 let pickerSelected = new Set()  // media item IDs selected in picker modal (max 3)
+let lastPickedTitles = null  // titles used for "filmek alapján" mode, null = regular mode
 let ajanlokEditorRows = [] // mutable rows for the recommendation editor
 let pendingSeenId = null   // card with open inline score picker on the 'none' tab
 const extRecCache = new Map()  // recId -> item object for external rec popup
@@ -848,29 +849,28 @@ function openAddItemModal() {
   if (!activeUser) return
   document.getElementById('moziDetailBody').innerHTML = `
     <div class="mozi-admin-edit">
-      <h2 class="mozi-useradmin-title" style="margin-bottom:16px">Új cím hozzáadása</h2>
-      <div class="mozi-admin-edit-fields">
-        <label class="mozi-admin-label">Típus
-          <select id="addModalType" class="mozi-useradmin-name" style="max-width:140px">
-            <option value="film">Film</option>
-            <option value="series">Sorozat</option>
-          </select>
-        </label>
-        <label class="mozi-admin-label">Cím
-          <input type="text" id="addModalTitle" class="mozi-useradmin-name"
-            placeholder="pl. Inception"
-            onkeydown="if(event.key==='Enter') submitAddItemModal()">
-        </label>
+      <h2 class="mozi-useradmin-title" style="margin-bottom:20px">Új cím hozzáadása</h2>
+      <div class="mozi-add-type-row">
+        <button class="mozi-add-type-btn active" id="addTypeFilm" onclick="setAddType('film')">🎬 Film</button>
+        <button class="mozi-add-type-btn" id="addTypeSeries" onclick="setAddType('series')">📺 Sorozat</button>
       </div>
-      <p class="mozi-admin-hint" style="margin-top:6px">A TMDB automatikusan megkeresi a poszterét és adatait.</p>
-      <div class="mozi-admin-edit-actions" style="margin-top:14px">
-        <button class="mozi-btn-primary" id="addModalBtn" onclick="submitAddItemModal()">Hozzáadás</button>
-        <span id="addModalResult" style="font-size:13px"></span>
-      </div>
+      <input type="hidden" id="addModalType" value="film">
+      <input type="text" id="addModalTitle" class="mozi-add-large-input"
+        placeholder="pl. Inception, Breaking Bad..."
+        onkeydown="if(event.key==='Enter') submitAddItemModal()">
+      <p class="mozi-admin-hint" style="margin-bottom:16px">A TMDB automatikusan megkeresi a poszterét és adatait.</p>
+      <button class="mozi-btn-primary mozi-add-submit-full" id="addModalBtn" onclick="submitAddItemModal()">+ Hozzáadás</button>
+      <div id="addModalResult" style="font-size:13px;margin-top:10px;min-height:20px"></div>
     </div>`
   document.getElementById('moziDetailOverlay').classList.add('active')
   document.body.style.overflow = 'hidden'
   setTimeout(() => document.getElementById('addModalTitle')?.focus(), 50)
+}
+
+function setAddType(type) {
+  document.getElementById('addModalType').value = type
+  document.getElementById('addTypeFilm').classList.toggle('active', type === 'film')
+  document.getElementById('addTypeSeries').classList.toggle('active', type === 'series')
 }
 
 async function submitAddItemModal() {
@@ -896,7 +896,7 @@ async function submitAddItemModal() {
   } catch (err) {
     if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">Hiba: ${escapeHtml(err.message)}</span>`
   }
-  if (btn) { btn.disabled = false; btn.textContent = 'Hozzáadás' }
+  if (btn) { btn.disabled = false; btn.textContent = '+ Hozzáadás' }
 }
 
 async function runMediaScan() {
@@ -1065,20 +1065,24 @@ function renderUserAdminBody() {
   return `<div class="mozi-useradmin">
     <h2 class="mozi-useradmin-title">Felhasználók</h2>
     <div class="mozi-useradmin-list">${rows}</div>
-    <div class="mozi-useradmin-add">
-      <div class="mozi-block-header" style="margin-top:20px">Új felhasználó</div>
-      <div class="mozi-useradmin-row">
-        <div class="mozi-avatar-sm mozi-useradmin-avatar" id="newUserAvatar" style="background:#6a9bcc">?</div>
-        <div class="mozi-useradmin-fields">
-          <input type="text" id="newUserName" class="mozi-useradmin-name" placeholder="Név"
-            oninput="updateNewAvatar()">
-          <input type="color" id="newUserColor" class="mozi-useradmin-color" value="#6a9bcc"
-            oninput="updateNewAvatar()">
-        </div>
-        <button class="mozi-btn-primary" onclick="addUser()">Hozzáadás</button>
+    <div class="mozi-rec-panel" style="margin-top:20px">
+      <div class="mozi-rec-panel-hd">
+        <span class="mozi-rec-panel-title">➕ Új felhasználó</span>
       </div>
-      <textarea id="newUserTaste" class="mozi-admin-textarea" style="margin-top:8px;min-height:60px"
-        placeholder="Ízlés leírása — pl. szeret thrillereket, nem kedveli a romantikus filmeket..."></textarea>
+      <div class="mozi-rec-panel-body">
+        <div class="mozi-useradmin-row">
+          <div class="mozi-avatar-sm mozi-useradmin-avatar" id="newUserAvatar" style="background:#6a9bcc">?</div>
+          <div class="mozi-useradmin-fields">
+            <input type="text" id="newUserName" class="mozi-useradmin-name" placeholder="Név"
+              oninput="updateNewAvatar()">
+            <input type="color" id="newUserColor" class="mozi-useradmin-color" value="#6a9bcc"
+              oninput="updateNewAvatar()">
+          </div>
+          <button class="mozi-btn-primary" onclick="addUser()">Hozzáadás</button>
+        </div>
+        <textarea id="newUserTaste" class="mozi-admin-textarea" style="margin-top:8px;min-height:60px"
+          placeholder="Ízlés leírása — pl. szeret thrillereket, nem kedveli a romantikus filmeket..."></textarea>
+      </div>
     </div>
   </div>`
 }
@@ -1179,7 +1183,7 @@ function likedByHtml(likedBy) {
 }
 
 // cardFn optional: override per-item renderer (e.g. external rec items that lack media_items.id)
-function renderRecBlock(header, items, metaFn, cardFn) {
+function renderRecBlock(header, items, metaFn, cardFn, colorClass = '') {
   const q = searchQuery
   const filtered = q ? items.filter(i => String(i.title || '').toLowerCase().includes(q)) : items
   if (!filtered.length) return ''
@@ -1189,7 +1193,7 @@ function renderRecBlock(header, items, metaFn, cardFn) {
     if (meta) return `<div class="mozi-rec-item">${renderer(item)}<div class="mozi-rec-meta">${meta}</div></div>`
     return renderer(item)
   }).join('')
-  return `<div class="mozi-catalog-block">
+  return `<div class="mozi-catalog-block${colorClass ? ' ' + colorClass : ''}">
     <div class="mozi-block-header mozi-block-header--sub">${escapeHtml(header)}</div>
     <div class="mozi-catalog-grid">${cards}</div>
   </div>`
@@ -1328,9 +1332,8 @@ async function moziActOnExtRec(recId, state, score) {
     renderCatalog()
 
     // Refresh personal ajanlok section if visible
-    if (activeTab === 'ajanlok') {
-      const el = document.getElementById('ajanlokPersonal')
-      if (el && recPersonalData) el.innerHTML = renderPersonalRec(recPersonalData)
+    if (activeTab === 'ajanlok' && recPersonalData) {
+      renderPersonalRec(recPersonalData)
     }
     showToast('Besorolva!')
   } catch (err) {
@@ -1342,9 +1345,39 @@ function renderPersonalRec(data) {
   const internal = data.internal || []
   const external = data.external || []
   mergeRecItems(internal)  // external carries media_recommendations.id, not media_items.id -- do NOT merge
-  const internalHtml = renderRecBlock('Házon belül ajánljuk', internal, item => likedByHtml(item.likedBy) || null)
-  const externalHtml = renderRecBlock('Új neked', external, null, item => renderExternalRecCard(item, item.reason))
-  return (internalHtml + externalHtml) || '<div class="mozi-empty">Még nincs személyes ajánlás -- pötyögjetek be pár pontot!</div>'
+
+  const subtitleEl = document.getElementById('aiPanelSubtitle')
+  if (subtitleEl) {
+    if (lastPickedTitles && lastPickedTitles.length) {
+      subtitleEl.textContent = ` · alapja: ${lastPickedTitles.join(', ')}`
+    } else {
+      subtitleEl.textContent = ''
+    }
+  }
+
+  const aiEl = document.getElementById('ajanlokAI')
+  const intEl = document.getElementById('ajanlokInternal')
+  const intPanel = document.getElementById('ajanlokInternalPanel')
+
+  if (aiEl) {
+    const q = searchQuery
+    const filtExt = q ? external.filter(i => String(i.title||'').toLowerCase().includes(q)) : external
+    aiEl.innerHTML = filtExt.length
+      ? `<div class="mozi-catalog-grid">${filtExt.map(item => renderExternalRecCard(item, item.reason)).join('')}</div>`
+      : '<div class="mozi-empty">Kattints az "AI ajánlókat kérek" gombra az első ajánláshoz.</div>'
+  }
+
+  if (intEl && intPanel) {
+    const q = searchQuery
+    const filtInt = q ? internal.filter(i => String(i.title||'').toLowerCase().includes(q)) : internal
+    if (filtInt.length) {
+      intPanel.hidden = false
+      intEl.innerHTML = `<div class="mozi-catalog-grid">${filtInt.map(item => renderCard(item, likedByHtml(item.likedBy) || null)).join('')}</div>`
+    } else {
+      intPanel.hidden = true
+      intEl.innerHTML = ''
+    }
+  }
 }
 
 async function renderAjanlok() {
@@ -1373,27 +1406,39 @@ async function renderAjanlok() {
         A <i>Filmek alapján</i> gombbal max. 3 konkrét filmet / sorozatot jelölhetsz ki, és az AI azokhoz hasonlókat ajánl.
       </div>
     </details>
-    <section class="mozi-ajanlok-section">
-      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-        <div class="mozi-block-header" style="margin:0">Személyes</div>
-        <button class="mozi-btn-ghost" id="aiRecsBtn" onclick="requestAiRecs()" style="margin-left:auto;font-size:0.88em">AI ajánlókat kérek</button>
-        <button class="mozi-btn-ghost" onclick="openPickerModal()" style="font-size:0.88em">Filmek alapján</button>
+
+    <div class="mozi-rec-panel mozi-rec-panel--ai">
+      <div class="mozi-rec-panel-hd">
+        <span class="mozi-rec-panel-title">🤖 AI ajánlók<span id="aiPanelSubtitle" class="mozi-rec-panel-subtitle"></span></span>
+        <button class="mozi-btn-ghost" id="aiRecsBtn" onclick="requestAiRecs()">AI ajánlókat kérek</button>
+        <button class="mozi-btn-ghost" onclick="openPickerModal()">Filmek alapján</button>
       </div>
-      <div id="ajanlokPersonal"><div class="mozi-loading">Betöltés...</div></div>
-    </section>
-    <section class="mozi-ajanlok-section">
-      <div class="mozi-block-header">Közös este</div>
-      <div class="mozi-group-selector">
-        <div class="mozi-group-users">${userCheckboxes}</div>
-        <button class="mozi-btn-primary" onclick="fetchGroupRec()">Mehet</button>
+      <div class="mozi-rec-panel-body" id="ajanlokAI"><div class="mozi-loading">Betöltés...</div></div>
+    </div>
+
+    <div class="mozi-rec-panel mozi-rec-panel--internal" id="ajanlokInternalPanel" hidden>
+      <div class="mozi-rec-panel-hd">
+        <span class="mozi-rec-panel-title">👥 Házon belül ajánljuk</span>
       </div>
-      <div id="ajanlokGroup"></div>
-    </section>
+      <div class="mozi-rec-panel-body" id="ajanlokInternal"></div>
+    </div>
+
+    <div class="mozi-rec-panel mozi-rec-panel--group">
+      <div class="mozi-rec-panel-hd">
+        <span class="mozi-rec-panel-title">🏠 Közös este</span>
+      </div>
+      <div class="mozi-rec-panel-body">
+        <div class="mozi-group-selector">
+          <div class="mozi-group-users">${userCheckboxes}</div>
+          <button class="mozi-btn-primary" onclick="fetchGroupRec()">Mehet</button>
+        </div>
+        <div id="ajanlokGroup"></div>
+      </div>
+    </div>
   </div>`
 
   if (recPersonalData) {
-    const el = document.getElementById('ajanlokPersonal')
-    if (el) el.innerHTML = renderPersonalRec(recPersonalData)
+    renderPersonalRec(recPersonalData)
     return
   }
 
@@ -1401,12 +1446,11 @@ async function renderAjanlok() {
     const data = await apiFetch(`/api/recommend?user=${activeUser.id}`)
     if (activeTab !== 'ajanlok') return
     recPersonalData = data
-    const el = document.getElementById('ajanlokPersonal')
-    if (el) el.innerHTML = renderPersonalRec(data)
+    renderPersonalRec(data)
   } catch (_) {
     if (activeTab !== 'ajanlok') return
-    const el = document.getElementById('ajanlokPersonal')
-    if (el) el.innerHTML = '<div class="mozi-empty">Ajánlások nem tölthetők be.</div>'
+    const aiEl = document.getElementById('ajanlokAI')
+    if (aiEl) aiEl.innerHTML = '<div class="mozi-empty">Ajánlások nem tölthetők be.</div>'
   }
 }
 
@@ -1481,32 +1525,34 @@ function updatePickerCount() {
 async function requestAiRecsFromPicked() {
   if (!activeUser || !pickerSelected.size) return
   closePickerModal()
-  const el = document.getElementById('ajanlokPersonal')
+  const aiEl = document.getElementById('ajanlokAI')
   const btn = document.getElementById('aiRecsBtn')
   if (btn) { btn.disabled = true; btn.textContent = 'Generálás...' }
-  if (el) el.innerHTML = '<div class="mozi-loading">AI ajánlókat generálok a kiválasztott filmek alapján...</div>'
+  if (aiEl) aiEl.innerHTML = '<div class="mozi-loading">AI ajánlókat generálok a kiválasztott filmek alapján...</div>'
   try {
-    await apiFetch('/api/recommend/refresh', {
+    const result = await apiFetch('/api/recommend/refresh', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: activeUser.id, pickedIds: [...pickerSelected] }),
     })
+    lastPickedTitles = result.pickedTitles || null
     recPersonalData = null
     const data = await apiFetch(`/api/recommend?user=${activeUser.id}`)
     recPersonalData = data
-    if (el) el.innerHTML = renderPersonalRec(data)
+    renderPersonalRec(data)
   } catch (err) {
-    if (el) el.innerHTML = `<div class="mozi-empty">Hiba: ${escapeHtml(err.message)}</div>`
+    if (aiEl) aiEl.innerHTML = `<div class="mozi-empty">Hiba: ${escapeHtml(err.message)}</div>`
   }
   if (btn) { btn.disabled = false; btn.textContent = 'AI ajánlókat kérek' }
 }
 
 async function requestAiRecs() {
   if (!activeUser) return
-  const el = document.getElementById('ajanlokPersonal')
+  lastPickedTitles = null
+  const aiEl = document.getElementById('ajanlokAI')
   const btn = document.getElementById('aiRecsBtn')
   if (btn) { btn.disabled = true; btn.textContent = 'Generálás...' }
-  if (el) el.innerHTML = '<div class="mozi-loading">AI ajánlókat generálok...</div>'
+  if (aiEl) aiEl.innerHTML = '<div class="mozi-loading">AI ajánlókat generálok...</div>'
   try {
     await apiFetch('/api/recommend/refresh', {
       method: 'POST',
@@ -1516,9 +1562,9 @@ async function requestAiRecs() {
     recPersonalData = null
     const data = await apiFetch(`/api/recommend?user=${activeUser.id}`)
     recPersonalData = data
-    if (el) el.innerHTML = renderPersonalRec(data)
+    renderPersonalRec(data)
   } catch (err) {
-    if (el) el.innerHTML = `<div class="mozi-empty">Hiba: ${escapeHtml(err.message)}</div>`
+    if (aiEl) aiEl.innerHTML = `<div class="mozi-empty">Hiba: ${escapeHtml(err.message)}</div>`
   }
   if (btn) { btn.disabled = false; btn.textContent = 'AI ajánlókat kérek' }
 }
@@ -1536,9 +1582,9 @@ async function fetchGroupRec() {
     const watchlist = data.watchlist || []
     mergeRecItems([...internal, ...watchlist])  // external carries media_recommendations.id -- do NOT merge
     const html = [
-      renderRecBlock('Mindkettőtöknek tetszhet', internal,  item => likedByHtml(item.likedBy) || null),
-      renderRecBlock('Külső ajánlás',            external,  null, item => renderExternalRecCard(item, item.reason)),
-      renderRecBlock('Valaki tervezi',           watchlist, item => item.reason ? `<span class="mozi-rec-reason">${escapeHtml(item.reason)}</span>` : null),
+      renderRecBlock('Mindkettőtöknek tetszhet', internal,  item => likedByHtml(item.likedBy) || null, null, 'block--seen'),
+      renderRecBlock('Külső ajánlás',            external,  null, item => renderExternalRecCard(item, item.reason), 'block--ai'),
+      renderRecBlock('Valaki tervezi',           watchlist, item => item.reason ? `<span class="mozi-rec-reason">${escapeHtml(item.reason)}</span>` : null, null, 'block--watchlist'),
     ].join('')
     groupEl.innerHTML = html || '<div class="mozi-empty">Nincs közös ajánlás a kijelölt körre.</div>'
   } catch (err) {
@@ -1547,9 +1593,9 @@ async function fetchGroupRec() {
 }
 
 // ── Block rendering (Home / Neked új / Megnézném / Nem érdekel) ───────────
-function renderBlock(header, items) {
+function renderBlock(header, items, colorClass = '') {
   if (!items.length) return ''
-  return `<div class="mozi-catalog-block">
+  return `<div class="mozi-catalog-block${colorClass ? ' ' + colorClass : ''}">
     <div class="mozi-block-header">${escapeHtml(header)}</div>
     <div class="mozi-catalog-grid">${items.map(renderCard).join('')}</div>
   </div>`
@@ -1578,9 +1624,9 @@ function renderCatalog() {
     const noneItems     = items.filter(i => getUserStatus(i.id).state === 'none')
     const inProgItems   = items.filter(i => getUserStatus(i.id).state === 'in_progress')
     const html = [
-      renderBlock('Megnézném', watchlistItems),
+      renderBlock('Megnézném', watchlistItems, 'block--watchlist'),
       renderBlock('Neked új', noneItems),
-      renderBlock('Folyamatban', inProgItems),
+      renderBlock('Folyamatban', inProgItems, 'block--progress'),
     ].join('')
     grid.innerHTML = html || '<div class="mozi-empty">Nincs besorolatlan tétel.</div>'
     return
@@ -1777,11 +1823,17 @@ function renderProfileModal(user, stats) {
   </label>
   <button class="mozi-btn-primary" id="profileSaveBtn" onclick="saveProfileSelf()" style="margin-top:10px">Mentés</button>
 
-  <div class="mozi-block-header" style="margin-top:28px;margin-bottom:0">Statisztikák</div>
-  <div class="mozi-stat-grid">${statCards}</div>
-  ${metaHtml}
-  ${genreHtml}
-  ${scoreDistHtml}`
+  <div class="mozi-rec-panel" style="margin-top:24px">
+    <div class="mozi-rec-panel-hd" style="border-top-color:var(--info)">
+      <span class="mozi-rec-panel-title">📊 Statisztikák</span>
+    </div>
+    <div class="mozi-rec-panel-body">
+      <div class="mozi-stat-grid">${statCards}</div>
+      ${metaHtml}
+      ${genreHtml}
+      ${scoreDistHtml}
+    </div>
+  </div>`
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────

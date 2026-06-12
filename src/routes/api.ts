@@ -416,61 +416,100 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         ? (body.pickedIds as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0).slice(0, 3)
         : null
 
-      const excludedTitles = getUserExcludedTitles(userId, user.key)
-      const exclusionBlock = excludedTitles.length ? excludedTitles.join(', ') : '(nincs kizárandó cím)'
+      const allExcludedTitles = getUserExcludedTitles(userId, user.key)
       const tasteDesc = user.taste_profile?.trim() ? `User's own taste description: ${user.taste_profile.trim()}` : ''
 
-      let task: string
-      let profileHeader: string
-      let profileLines: string
+      let exclusionTitles: string[]
+      let buildPrompt: (extra?: string) => string
+      let pickedTitles: string[] = []
 
       if (pickedIds && pickedIds.length > 0) {
         const pickedItems = pickedIds.map(id => getMediaItem(id)).filter((item): item is MediaItem => !!item)
-        task = 'recommend 8-10 films and/or series similar in style, theme, and feel to these titles the user loved:'
-        profileHeader = 'Reference titles:'
-        profileLines = pickedItems.map(item => {
+        pickedTitles = pickedItems.map(i => i.title)
+        const pickedTitlesLower = new Set(pickedTitles.map(t => t.toLowerCase()))
+        // Remove the reference titles from exclusion — they appear in the reference section instead
+        exclusionTitles = allExcludedTitles.filter(t => !pickedTitlesLower.has(t.toLowerCase()))
+        const exclusionBlock = exclusionTitles.length ? exclusionTitles.join(', ') : '(none)'
+        const refLines = pickedItems.map(item => {
           const genres = item.genres ? (() => { try { return (JSON.parse(item.genres!) as Array<{name?:string}>).map(g => g.name ?? String(g)).join(', ') } catch { return item.genres } })() : ''
           return `- ${item.title}${item.year ? ` (${item.year})` : ''}${genres ? ` [${genres}]` : ''}`
         }).join('\n') || '(no items)'
+        // Picked-films mode: focus ONLY on stylistic similarity — do NOT include general taste profile
+        buildPrompt = (extra = '') => [
+          'You are a film and TV series recommendation engine. Respond with ONLY a valid JSON array — no markdown, no explanation, no code fences.',
+          '',
+          'Task: recommend 8 films and/or series that share similar narrative tone, visual style, themes, or genre with ALL of the following titles:',
+          '',
+          'Reference titles (find films SIMILAR to these — do NOT recommend these exact titles):',
+          refLines,
+          '',
+          'Focus on the common elements between the reference titles (atmosphere, pacing, genre, director style).',
+          '',
+          'EXCLUSION LIST — do NOT recommend any title on this list:',
+          exclusionBlock,
+          '',
+          'Rules:',
+          '- CRITICAL: return EXACTLY 8 items. Never fewer.',
+          '- Mix films and series (type: "film" or "series")',
+          '- Only real, existing titles',
+          '- Do NOT include any title from the exclusion list',
+          '- Do NOT include the reference titles themselves',
+          '- title field: use the well-known international (usually English) title so it can be looked up in TMDB',
+          '- reason field must be in Hungarian, 1 sentence explaining why it resembles the reference titles',
+          '- year field: release year as integer, or null if unknown',
+          ...(extra ? [extra] : []),
+          '',
+          'JSON format (array only, no wrapper):',
+          '[{"type":"film","title":"Example Title","year":2019,"reason":"Magyar indoklás."}]',
+        ].join('\n')
       } else {
+        exclusionTitles = allExcludedTitles
+        const exclusionBlock = exclusionTitles.length ? exclusionTitles.join(', ') : '(none)'
         const seenProfile = getUserSeenProfile(userId)
-        task = 'recommend 8-10 films and/or series for a user based on their taste profile below.'
-        profileHeader = 'Rated titles (title, score/10, genres):'
-        profileLines = seenProfile.length
+        const profileLines = seenProfile.length
           ? seenProfile.map(it => {
               const genres = it.genres ? (() => { try { return (JSON.parse(it.genres!) as Array<{name?:string}>).map(g => g.name ?? g).join(', ') } catch { return it.genres } })() : ''
               return `- ${it.title} (${it.score}/10)${genres ? ` [${genres}]` : ''}`
             }).join('\n')
           : '(nincs értékelt film/sorozat még)'
+        buildPrompt = (extra = '') => [
+          'You are a film and TV series recommendation engine. Respond with ONLY a valid JSON array — no markdown, no explanation, no code fences.',
+          '',
+          'Task: recommend 8 films and/or series for a user based on their taste profile below.',
+          '',
+          'Rated titles (title, score/10, genres):',
+          profileLines,
+          ...(tasteDesc ? ['', tasteDesc] : []),
+          '',
+          'EXCLUSION LIST — do NOT recommend any title on this list:',
+          exclusionBlock,
+          '',
+          'Rules:',
+          '- CRITICAL: return EXACTLY 8 items. Never fewer. If the list is long, pick less obvious but real quality titles.',
+          '- Mix films and series (type: "film" or "series")',
+          '- Only real, existing titles',
+          '- Do NOT include any title from the exclusion list',
+          '- title field: use the well-known international (usually English) title so it can be looked up in TMDB',
+          '- reason field must be in Hungarian, 1 sentence',
+          '- year field: release year as integer, or null if unknown',
+          ...(extra ? [extra] : []),
+          '',
+          'JSON format (array only, no wrapper):',
+          '[{"type":"film","title":"Example Title","year":2019,"reason":"Magyar indoklás."}]',
+        ].join('\n')
       }
-
-      const prompt = [
-        'You are a film and TV series recommendation engine. Respond with ONLY a valid JSON array — no markdown, no explanation, no code fences.',
-        '',
-        `Task: ${task}`,
-        '',
-        profileHeader,
-        profileLines,
-        ...(tasteDesc ? ['', tasteDesc] : []),
-        '',
-        'EXCLUSION LIST — do NOT recommend any title on this list:',
-        exclusionBlock,
-        '',
-        'Rules:',
-        '- Mix films and series (type: "film" or "series")',
-        '- Only real, existing titles',
-        '- Do NOT include any title from the exclusion list',
-        '- title field: use the well-known international (usually English) title so it can be looked up in TMDB',
-        '- reason field must be in Hungarian, 1 sentence',
-        '- year field: release year as integer, or null if unknown',
-        '',
-        'JSON format (array only, no wrapper):',
-        '[{"type":"film","title":"Example Title","year":2019,"reason":"Magyar indoklás."}]',
-      ].join('\n')
 
       let rawRecs: Array<{ type: 'film' | 'series'; title: string; year: number | null; reason: string }>
       try {
-        rawRecs = await generateRecommendations(prompt, 60_000)
+        rawRecs = await generateRecommendations(buildPrompt(), 60_000)
+        // Retry once if too few results returned
+        if (rawRecs.length < 5) {
+          const retried = await generateRecommendations(
+            buildPrompt('- IMPORTANT: previous attempt returned too few items. You MUST provide exactly 8.'),
+            60_000
+          ).catch(() => [] as typeof rawRecs)
+          if (retried.length > rawRecs.length) rawRecs = retried
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         json(ctx.res, { error: `AI hívás sikertelen: ${msg}` }, 502)
@@ -478,7 +517,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       }
 
       if (!rawRecs.length) {
-        json(ctx.res, { ok: false, error: 'AI 0 ajánlást adott vissza' }, 502)
+        json(ctx.res, { ok: false, error: 'AI 0 ajánlást adott vissza — próbáld újra' }, 502)
         return true
       }
 
@@ -497,7 +536,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       }))
 
       const count = replaceMediaRecommendations(user.key, enriched)
-      json(ctx.res, { ok: true, count })
+      json(ctx.res, { ok: true, count, pickedTitles: pickedTitles.length ? pickedTitles : undefined })
       return true
     }
 

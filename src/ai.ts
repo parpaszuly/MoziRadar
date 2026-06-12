@@ -23,7 +23,7 @@ async function callOpenAICompat(baseUrl: string, apiKey: string, model: string, 
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2048,
+      max_tokens: 3000,
       temperature: 0.7,
     }),
     signal: AbortSignal.timeout(timeoutMs),
@@ -44,7 +44,7 @@ async function callClaude(apiKey: string, model: string, prompt: string, timeout
     },
     body: JSON.stringify({
       model,
-      max_tokens: 2048,
+      max_tokens: 3000,
       messages: [{ role: 'user', content: prompt }],
     }),
     signal: AbortSignal.timeout(timeoutMs),
@@ -56,9 +56,12 @@ async function callClaude(apiKey: string, model: string, prompt: string, timeout
 }
 
 function parseJsonRecs(text: string): LlmRec[] {
-  // Strip markdown code fences if present
-  const cleaned = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim()
-  const arr: unknown = JSON.parse(cleaned)
+  // Strip all code fences, then extract the first JSON array from the text
+  const stripped = text.replace(/```[a-z]*/gi, '').replace(/```/g, '').trim()
+  const match = stripped.match(/\[[\s\S]*\]/)
+  if (!match) return []
+  let arr: unknown
+  try { arr = JSON.parse(match[0]) } catch { return [] }
   if (!Array.isArray(arr)) return []
   return arr.filter(
     (r): r is LlmRec =>

@@ -74,8 +74,11 @@
   <div class="mozi-page" id="pageLibrary">
     <div class="mozi-library">
       <div class="mozi-search-wrap">
-        <input type="text" id="moziSearch" class="mozi-search-input" placeholder="Film vagy sorozat keresése...">
-        <button id="moziSearchClear" class="mozi-search-clear" aria-label="Keresés törlése" hidden>&times;</button>
+        <div class="mozi-search-inner">
+          <input type="text" id="moziSearch" class="mozi-search-input" placeholder="Film vagy sorozat keresése...">
+          <button id="moziSearchClear" class="mozi-search-clear" aria-label="Keresés törlése" hidden>&times;</button>
+        </div>
+        <button class="mozi-btn-primary mozi-search-add-btn" id="moziAddBtn" onclick="openAddItemModal()">+ Hozzáadás</button>
       </div>
       <div class="mozi-tabs-row">
         <div class="mozi-tabs" id="catalogTabs">
@@ -87,7 +90,6 @@
           <button class="mozi-tab" data-tab="not_interested">Nem érdekel</button>
           <button class="mozi-tab" data-tab="ajanlok">Ajánló</button>
         </div>
-        <button class="mozi-btn-ghost" id="moziAddBtn" onclick="openAddItemModal()" title="Új film vagy sorozat hozzáadása">+ Hozzáadás</button>
         <button class="mozi-btn-ghost mozi-triage-toggle" id="moziTriageToggle" hidden>Kijelölés</button>
       </div>
       <div class="mozi-catalog-grid" id="catalogGrid">
