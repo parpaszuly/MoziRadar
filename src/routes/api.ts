@@ -167,7 +167,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
     }
 
     if (path === '/api/users' && method === 'POST') {
-      const body = await parseBody<{ adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown }>(ctx.req, ctx.res)
+      const body = await parseBody<{ adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown; tasteProfile?: unknown }>(ctx.req, ctx.res)
       if (!body) return true
       if (!requireAdmin(ctx.res, body.adminId)) return true
       if (typeof body.name !== 'string' || !body.name.trim()) {
@@ -176,7 +176,8 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       if (typeof body.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(body.color)) {
         json(ctx.res, { error: 'color: érvényes hex szín (pl. #3B82F6)' }, 400); return true
       }
-      const newUser = createMediaUser(body.name.trim(), body.color, typeof body.avatar === 'string' ? body.avatar : null)
+      const tasteProfile = typeof body.tasteProfile === 'string' ? body.tasteProfile.trim() || null : null
+      const newUser = createMediaUser(body.name.trim(), body.color, typeof body.avatar === 'string' ? body.avatar : null, false, tasteProfile)
       json(ctx.res, { ok: true, user: newUser }, 201)
       return true
     }
@@ -184,10 +185,10 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
     const userPatchMatch = path.match(/^\/api\/users\/(\d+)$/)
     if (userPatchMatch && method === 'PATCH') {
       const targetId = parseInt(userPatchMatch[1], 10)
-      const body = await parseBody<{ adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown }>(ctx.req, ctx.res)
+      const body = await parseBody<{ adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown; tasteProfile?: unknown }>(ctx.req, ctx.res)
       if (!body) return true
       if (!requireAdmin(ctx.res, body.adminId)) return true
-      const data: { name?: string; color?: string; avatar?: string | null } = {}
+      const data: { name?: string; color?: string; avatar?: string | null; tasteProfile?: string | null } = {}
       if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
       if (body.color !== undefined) {
         if (typeof body.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(body.color)) {
@@ -196,6 +197,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         data.color = body.color
       }
       if (body.avatar !== undefined) data.avatar = typeof body.avatar === 'string' ? body.avatar : null
+      if (body.tasteProfile !== undefined) data.tasteProfile = typeof body.tasteProfile === 'string' ? body.tasteProfile.trim() || null : null
       const updated = updateMediaUser(targetId, data)
       if (!updated) { json(ctx.res, { error: 'Felhasználó nem található' }, 404); return true }
       json(ctx.res, { ok: true, user: updated })
@@ -405,13 +407,18 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
 
       const exclusionBlock = excludedTitles.length ? excludedTitles.join(', ') : '(nincs kizárandó cím)'
 
+      const tasteDesc = user.taste_profile?.trim()
+        ? `\nUser's own taste description: ${user.taste_profile.trim()}`
+        : ''
+
       const prompt = [
         'You are a film and TV series recommendation engine. Respond with ONLY a valid JSON array — no markdown, no explanation, no code fences.',
         '',
         'Task: recommend 8-10 films and/or series for a user based on their taste profile below.',
         '',
-        'Taste profile (title, score/10, genres):',
+        'Rated titles (title, score/10, genres):',
         profileLines,
+        ...(tasteDesc ? [tasteDesc] : []),
         '',
         'EXCLUSION LIST — do NOT recommend any title on this list:',
         exclusionBlock,

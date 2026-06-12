@@ -986,18 +986,23 @@ function renderUserAdminBody() {
     const initials = escapeHtml(avatarInitials(u.name))
     const color = escapeHtml(u.color || '#888')
     const name = escapeHtml(u.name)
+    const taste = escapeHtml(u.taste_profile || '')
     const badge = u.is_admin ? '<span class="mozi-useradmin-badge">admin</span>' : ''
-    return `<div class="mozi-useradmin-row" id="useradmin-row-${u.id}">
-      <div class="mozi-avatar-sm mozi-useradmin-avatar" id="useradmin-avatar-${u.id}" style="background:${color}">${initials}</div>
-      <div class="mozi-useradmin-fields">
-        <div class="mozi-useradmin-namewrap">
-          <input type="text" class="mozi-useradmin-name" id="useradmin-name-${u.id}" value="${name}" placeholder="Név">
-          ${badge}
+    return `<div id="useradmin-row-${u.id}" style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="mozi-avatar-sm mozi-useradmin-avatar" id="useradmin-avatar-${u.id}" style="background:${color}">${initials}</div>
+        <div class="mozi-useradmin-fields">
+          <div class="mozi-useradmin-namewrap">
+            <input type="text" class="mozi-useradmin-name" id="useradmin-name-${u.id}" value="${name}" placeholder="Név">
+            ${badge}
+          </div>
+          <input type="color" class="mozi-useradmin-color" id="useradmin-color-${u.id}" value="${color}"
+            oninput="updateEditAvatar(${u.id})">
         </div>
-        <input type="color" class="mozi-useradmin-color" id="useradmin-color-${u.id}" value="${color}"
-          oninput="updateEditAvatar(${u.id})">
+        <button class="mozi-btn-ghost mozi-useradmin-save" onclick="saveUserEdit(${u.id})">Mentés</button>
       </div>
-      <button class="mozi-btn-ghost mozi-useradmin-save" onclick="saveUserEdit(${u.id})">Mentés</button>
+      <textarea id="useradmin-taste-${u.id}" class="mozi-admin-textarea" style="margin-top:8px;min-height:60px"
+        placeholder="Ízlés leírása — pl. szeret thrillereket, nem kedveli a romantikus filmeket...">${taste}</textarea>
     </div>`
   }).join('')
 
@@ -1016,6 +1021,8 @@ function renderUserAdminBody() {
         </div>
         <button class="mozi-btn-primary" onclick="addUser()">Hozzáadás</button>
       </div>
+      <textarea id="newUserTaste" class="mozi-admin-textarea" style="margin-top:8px;min-height:60px"
+        placeholder="Ízlés leírása — pl. szeret thrillereket, nem kedveli a romantikus filmeket..."></textarea>
     </div>
   </div>`
 }
@@ -1040,8 +1047,10 @@ async function saveUserEdit(userId) {
   if (!activeUser?.is_admin) return
   const nameEl  = document.getElementById(`useradmin-name-${userId}`)
   const colorEl = document.getElementById(`useradmin-color-${userId}`)
+  const tasteEl = document.getElementById(`useradmin-taste-${userId}`)
   const name  = nameEl?.value.trim()
   const color = colorEl?.value
+  const tasteProfile = tasteEl?.value ?? null
   if (!name) { showToast('A név nem lehet üres.'); return }
   const btn = document.querySelector(`#useradmin-row-${userId} .mozi-useradmin-save`)
   if (btn) { btn.disabled = true; btn.textContent = '...' }
@@ -1049,11 +1058,11 @@ async function saveUserEdit(userId) {
     const data = await apiFetch(`/api/users/${userId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminId: activeUser.id, name, color }),
+      body: JSON.stringify({ adminId: activeUser.id, name, color, tasteProfile }),
     })
-    const updated = data.user || { id: userId, name, color }
+    const updated = data.user || { id: userId, name, color, taste_profile: tasteProfile }
     const idx = usersCache.findIndex(u => u.id === userId)
-    if (idx >= 0) usersCache[idx] = { ...usersCache[idx], name: updated.name, color: updated.color }
+    if (idx >= 0) usersCache[idx] = { ...usersCache[idx], name: updated.name, color: updated.color, taste_profile: updated.taste_profile }
     if (activeUser.id === userId) {
       activeUser.name = updated.name
       activeUser.color = updated.color
@@ -1074,8 +1083,10 @@ async function addUser() {
   if (!activeUser?.is_admin) return
   const nameEl  = document.getElementById('newUserName')
   const colorEl = document.getElementById('newUserColor')
+  const tasteEl = document.getElementById('newUserTaste')
   const name  = nameEl?.value.trim()
   const color = colorEl?.value || '#6a9bcc'
+  const tasteProfile = tasteEl?.value.trim() || null
   if (!name) { showToast('Adj meg egy nevet.'); return }
   const btn = document.querySelector('.mozi-useradmin-add .mozi-btn-primary')
   if (btn) { btn.disabled = true; btn.textContent = '...' }
@@ -1083,7 +1094,7 @@ async function addUser() {
     const data = await apiFetch('/api/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminId: activeUser.id, name, color }),
+      body: JSON.stringify({ adminId: activeUser.id, name, color, tasteProfile }),
     })
     const newUser = data.user
     usersCache.push(newUser)
@@ -1295,7 +1306,10 @@ async function renderAjanlok() {
 
   grid.innerHTML = `<div class="mozi-ajanlok">
     <section class="mozi-ajanlok-section">
-      <div class="mozi-block-header">Személyes</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div class="mozi-block-header" style="margin:0">Személyes</div>
+        <button class="mozi-btn-ghost" id="aiRecsBtn" onclick="requestAiRecs()" style="margin-left:auto;font-size:0.88em">AI ajánlókat kérek</button>
+      </div>
       <div id="ajanlokPersonal"><div class="mozi-loading">Betöltés...</div></div>
     </section>
     <section class="mozi-ajanlok-section">
@@ -1325,6 +1339,28 @@ async function renderAjanlok() {
     const el = document.getElementById('ajanlokPersonal')
     if (el) el.innerHTML = '<div class="mozi-empty">Ajánlások nem tölthetők be.</div>'
   }
+}
+
+async function requestAiRecs() {
+  if (!activeUser) return
+  const el = document.getElementById('ajanlokPersonal')
+  const btn = document.getElementById('aiRecsBtn')
+  if (btn) { btn.disabled = true; btn.textContent = 'Generálás...' }
+  if (el) el.innerHTML = '<div class="mozi-loading">AI ajánlókat generálok...</div>'
+  try {
+    await apiFetch('/api/recommend/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: activeUser.id }),
+    })
+    recPersonalData = null
+    const data = await apiFetch(`/api/recommend?user=${activeUser.id}`)
+    recPersonalData = data
+    if (el) el.innerHTML = renderPersonalRec(data)
+  } catch (err) {
+    if (el) el.innerHTML = `<div class="mozi-empty">Hiba: ${escapeHtml(err.message)}</div>`
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'AI ajánlókat kérek' }
 }
 
 async function fetchGroupRec() {

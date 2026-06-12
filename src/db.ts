@@ -43,9 +43,11 @@ db.exec(`
     color TEXT NOT NULL,
     avatar TEXT,
     is_admin INTEGER NOT NULL DEFAULT 0,
+    taste_profile TEXT,
     created_at INTEGER NOT NULL
   )
 `)
+try { db.exec(`ALTER TABLE media_users ADD COLUMN taste_profile TEXT`) } catch { /* already exists */ }
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS media_user_status (
@@ -113,6 +115,7 @@ export interface MediaUser {
   color: string
   avatar: string | null
   is_admin: number
+  taste_profile: string | null
   created_at: number
 }
 
@@ -271,22 +274,23 @@ export function getMediaUserById(id: number): MediaUser | undefined {
   return db.prepare('SELECT * FROM media_users WHERE id = ?').get(id) as MediaUser | undefined
 }
 
-export function createMediaUser(name: string, color: string, avatar?: string | null, isAdmin = false): MediaUser {
+export function createMediaUser(name: string, color: string, avatar?: string | null, isAdmin = false, tasteProfile?: string | null): MediaUser {
   const key = generateUserKey(name)
   const now = Math.floor(Date.now() / 1000)
   const result = db.prepare(
-    'INSERT INTO media_users (key, name, color, avatar, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(key, name, color, avatar ?? null, isAdmin ? 1 : 0, now)
+    'INSERT INTO media_users (key, name, color, avatar, is_admin, taste_profile, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(key, name, color, avatar ?? null, isAdmin ? 1 : 0, tasteProfile ?? null, now)
   return db.prepare('SELECT * FROM media_users WHERE id = ?').get(result.lastInsertRowid) as MediaUser
 }
 
-export function updateMediaUser(id: number, data: { name?: string; color?: string; avatar?: string | null }): MediaUser | undefined {
+export function updateMediaUser(id: number, data: { name?: string; color?: string; avatar?: string | null; tasteProfile?: string | null }): MediaUser | undefined {
   const user = db.prepare('SELECT * FROM media_users WHERE id = ?').get(id) as MediaUser | undefined
   if (!user) return undefined
   const newName  = data.name   !== undefined ? data.name   : user.name
   const newColor = data.color  !== undefined ? data.color  : user.color
   const newAvatar = data.avatar !== undefined ? data.avatar : user.avatar
-  db.prepare('UPDATE media_users SET name = ?, color = ?, avatar = ? WHERE id = ?').run(newName, newColor, newAvatar, id)
+  const newTaste  = data.tasteProfile !== undefined ? data.tasteProfile : user.taste_profile
+  db.prepare('UPDATE media_users SET name = ?, color = ?, avatar = ?, taste_profile = ? WHERE id = ?').run(newName, newColor, newAvatar, newTaste, id)
   return db.prepare('SELECT * FROM media_users WHERE id = ?').get(id) as MediaUser
 }
 
