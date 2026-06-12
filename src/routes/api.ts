@@ -427,6 +427,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         '- Mix films and series (type: "film" or "series")',
         '- Only real, existing titles',
         '- Do NOT include any title from the exclusion list',
+        '- title field: use the well-known international (usually English) title so it can be looked up in TMDB',
         '- reason field must be in Hungarian, 1 sentence',
         '- year field: release year as integer, or null if unknown',
         '',
@@ -449,7 +450,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       }
 
       const enriched = await Promise.all(rawRecs.map(async rec => {
-        let enrichment = { poster_url: null as string | null, overview: null as string | null, year: rec.year }
+        let enrichment = { title: null as string | null, poster_url: null as string | null, overview: null as string | null, year: rec.year }
         try {
           const tmdb = await Promise.race([
             tmdbSearch(rec.type, rec.title),
@@ -457,9 +458,9 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
               AbortSignal.timeout(5_000).addEventListener('abort', () => rej(new Error('TMDB timeout')), { once: true })
             ),
           ])
-          enrichment = { poster_url: tmdb.poster_url, overview: tmdb.overview, year: tmdb.year ?? rec.year }
+          enrichment = { title: tmdb.title, poster_url: tmdb.poster_url, overview: tmdb.overview, year: tmdb.year ?? rec.year }
         } catch { /* tolerated */ }
-        return { type: rec.type, title: rec.title, year: enrichment.year, reason: rec.reason || null, poster_url: enrichment.poster_url, overview: enrichment.overview, source: 'ai' }
+        return { type: rec.type, title: enrichment.title ?? rec.title, year: enrichment.year, reason: rec.reason || null, poster_url: enrichment.poster_url, overview: enrichment.overview, source: 'ai' }
       }))
 
       const count = replaceMediaRecommendations(user.key, enriched)
