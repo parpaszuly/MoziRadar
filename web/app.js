@@ -1490,6 +1490,140 @@ function initSearch() {
   })
 }
 
+// ── Profile modal ──────────────────────────────────────────────────────────
+async function openProfileModal() {
+  if (!activeUser) return
+  const overlay = document.getElementById('moziProfileOverlay')
+  const body = document.getElementById('moziProfileBody')
+  overlay.classList.add('active')
+  document.body.style.overflow = 'hidden'
+  body.innerHTML = '<div class="mozi-loading">Betöltés...</div>'
+  try {
+    const data = await apiFetch(`/api/users/${activeUser.id}/stats`)
+    body.innerHTML = renderProfileModal(data.user, data.stats)
+  } catch (err) {
+    body.innerHTML = `<div class="mozi-empty">Hiba: ${escapeHtml(err.message)}</div>`
+  }
+}
+
+function closeProfileModal() {
+  document.getElementById('moziProfileOverlay').classList.remove('active')
+  document.body.style.overflow = ''
+}
+
+function updateProfileAvatar() {
+  const colorEl = document.getElementById('profileColorInput')
+  const avatarEl = document.getElementById('profileAvatar')
+  if (colorEl && avatarEl) avatarEl.style.background = colorEl.value
+}
+
+async function saveProfileSelf() {
+  if (!activeUser) return
+  const colorEl = document.getElementById('profileColorInput')
+  const tasteEl = document.getElementById('profileTasteInput')
+  const btn = document.getElementById('profileSaveBtn')
+  if (btn) { btn.disabled = true; btn.textContent = '...' }
+  try {
+    const data = await apiFetch(`/api/users/${activeUser.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: activeUser.id,
+        color: colorEl?.value,
+        tasteProfile: tasteEl?.value ?? null,
+      }),
+    })
+    const updated = data.user
+    activeUser.color = updated.color
+    localStorage.setItem('mozi_active_user', JSON.stringify(activeUser))
+    const idx = usersCache.findIndex(u => u.id === activeUser.id)
+    if (idx >= 0) usersCache[idx] = { ...usersCache[idx], color: updated.color, taste_profile: updated.taste_profile }
+    updateHeader()
+    renderProfileGridFromCache()
+    showToast('Profil mentve.')
+  } catch (err) {
+    showToast('Hiba: ' + err.message)
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Mentés' }
+}
+
+function renderScoreDist(dist) {
+  if (!dist.length) return ''
+  const max = Math.max(...dist.map(d => d.count))
+  const bars = dist.map(d => {
+    const pct = max > 0 ? Math.round((d.count / max) * 100) : 0
+    return `<div class="mozi-score-row">
+      <span class="mozi-score-row-label">${d.score}</span>
+      <div class="mozi-score-bar-wrap"><div class="mozi-score-bar" style="width:${pct}%"></div></div>
+      <span class="mozi-score-row-count">${d.count}</span>
+    </div>`
+  }).join('')
+  return `<div class="mozi-score-dist">
+    <div class="mozi-block-header--sub" style="margin-bottom:8px">Pontozás eloszlása</div>
+    ${bars}
+  </div>`
+}
+
+function renderProfileModal(user, stats) {
+  const initials = escapeHtml(avatarInitials(user.name))
+  const color = escapeHtml(user.color || '#888')
+  const taste = escapeHtml(user.taste_profile || '')
+
+  const statCards = [
+    { num: stats.seen,           label: 'Láttam',       cls: 'seen' },
+    { num: stats.watchlist,      label: 'Megnézném',    cls: 'watchlist' },
+    { num: stats.in_progress,    label: 'Folyamatban',  cls: 'progress' },
+    { num: stats.not_interested, label: 'Nem érdekel',  cls: 'skip' },
+  ].map(s => `<div class="mozi-stat-card mozi-stat-card--${s.cls}">
+    <div class="mozi-stat-num">${s.num}</div>
+    <div class="mozi-stat-label">${escapeHtml(s.label)}</div>
+  </div>`).join('')
+
+  const metaLines = []
+  if (stats.avg_score != null) metaLines.push(`Átlag pontszám: <b>${stats.avg_score}/10</b>`)
+  if (stats.total_runtime_min) {
+    const h = Math.floor(stats.total_runtime_min / 60)
+    const m = stats.total_runtime_min % 60
+    metaLines.push(`Filmek nézési ideje: <b>${h > 0 ? h + ' óra' : ''}${m > 0 ? ' ' + m + ' perc' : ''}</b>`)
+  }
+  const metaHtml = metaLines.length
+    ? `<div class="mozi-stat-meta">${metaLines.map(l => `<span>${l}</span>`).join('')}</div>`
+    : ''
+
+  const genreHtml = stats.top_genres.length ? `<div class="mozi-stat-genres">
+    <div class="mozi-block-header--sub">Top műfajok</div>
+    <div class="mozi-genre-tags">${stats.top_genres.map(g =>
+      `<span class="mozi-genre-tag">${escapeHtml(g.name)} <b>${g.count}</b></span>`
+    ).join('')}</div>
+  </div>` : ''
+
+  const scoreDistHtml = stats.score_dist.length ? renderScoreDist(stats.score_dist) : ''
+
+  return `<div class="mozi-profile-header">
+    <div class="mozi-avatar-lg" id="profileAvatar" style="background:${color}">${initials}</div>
+    <div class="mozi-profile-info">
+      <div class="mozi-profile-name">${escapeHtml(user.name)}</div>
+      <label class="mozi-profile-color-row">
+        <input type="color" id="profileColorInput" value="${color}" oninput="updateProfileAvatar()">
+        <span class="mozi-profile-color-hint">Profilszín</span>
+      </label>
+    </div>
+  </div>
+
+  <label class="mozi-admin-label" style="margin-top:20px;display:block">
+    Milyen filmeket, sorozatokat szeretek?
+    <textarea id="profileTasteInput" class="mozi-admin-textarea" style="min-height:80px;margin-top:6px"
+      placeholder="Pl. szeretem a thrillereket és a sci-fi filmeket, nem kedvelem a romantikus vígjátékokat...">${taste}</textarea>
+  </label>
+  <button class="mozi-btn-primary" id="profileSaveBtn" onclick="saveProfileSelf()" style="margin-top:10px">Mentés</button>
+
+  <div class="mozi-block-header" style="margin-top:28px;margin-bottom:0">Statisztikák</div>
+  <div class="mozi-stat-grid">${statCards}</div>
+  ${metaHtml}
+  ${genreHtml}
+  ${scoreDistHtml}`
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 async function init() {
   initSearch()
@@ -1500,6 +1634,13 @@ async function init() {
   document.getElementById('moziUserAdminClose').addEventListener('click', closeUserAdmin)
   document.getElementById('moziUserAdminOverlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeUserAdmin()
+  })
+
+  document.getElementById('headerAvatar').addEventListener('click', openProfileModal)
+  document.getElementById('headerName').addEventListener('click', openProfileModal)
+  document.getElementById('moziProfileClose').addEventListener('click', closeProfileModal)
+  document.getElementById('moziProfileOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeProfileModal()
   })
 
   document.getElementById('headerSwitchBtn').addEventListener('click', () => {
@@ -1525,7 +1666,8 @@ async function init() {
   })
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (document.getElementById('moziUserAdminOverlay').classList.contains('active')) closeUserAdmin()
+      if (document.getElementById('moziProfileOverlay').classList.contains('active')) closeProfileModal()
+      else if (document.getElementById('moziUserAdminOverlay').classList.contains('active')) closeUserAdmin()
       else if (document.getElementById('moziDetailOverlay').classList.contains('active')) moziCloseDetail()
     }
   })

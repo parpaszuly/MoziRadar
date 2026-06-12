@@ -7,7 +7,7 @@ import {
   createMediaItem, updateMediaItem, updateMediaItemEnrichment,
   listMediaRecommendations, replaceMediaRecommendations,
   getMediaRecommendationById, findMediaItemByTitleYear,
-  getUserSeenProfile, getUserExcludedTitles,
+  getUserSeenProfile, getUserExcludedTitles, getUserStats,
   listItemsNeedingEnrichment,
   findMediaItemByTmdbId,
   getAllSettings, getSetting, setSetting,
@@ -182,21 +182,34 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
+    const userStatsMatch = path.match(/^\/api\/users\/(\d+)\/stats$/)
+    if (userStatsMatch && method === 'GET') {
+      const targetId = parseInt(userStatsMatch[1], 10)
+      const user = getMediaUserById(targetId)
+      if (!user) { json(ctx.res, { error: 'Felhasználó nem található' }, 404); return true }
+      json(ctx.res, { user, stats: getUserStats(targetId) })
+      return true
+    }
+
     const userPatchMatch = path.match(/^\/api\/users\/(\d+)$/)
     if (userPatchMatch && method === 'PATCH') {
       const targetId = parseInt(userPatchMatch[1], 10)
-      const body = await parseBody<{ adminId?: unknown; name?: unknown; color?: unknown; avatar?: unknown; tasteProfile?: unknown }>(ctx.req, ctx.res)
+      const body = await parseBody<{ adminId?: unknown; userId?: unknown; name?: unknown; color?: unknown; avatar?: unknown; tasteProfile?: unknown }>(ctx.req, ctx.res)
       if (!body) return true
-      if (!requireAdmin(ctx.res, body.adminId)) return true
+      const selfEditId = typeof body.userId === 'number' ? body.userId : NaN
+      const isSelfEdit = !isNaN(selfEditId) && selfEditId === targetId && !!getMediaUserById(selfEditId)
+      if (!isSelfEdit && !requireAdmin(ctx.res, body.adminId)) return true
       const data: { name?: string; color?: string; avatar?: string | null; tasteProfile?: string | null } = {}
-      if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
+      if (!isSelfEdit) {
+        if (typeof body.name === 'string' && body.name.trim()) data.name = body.name.trim()
+        if (body.avatar !== undefined) data.avatar = typeof body.avatar === 'string' ? body.avatar : null
+      }
       if (body.color !== undefined) {
         if (typeof body.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(body.color)) {
           json(ctx.res, { error: 'color: érvényes hex szín' }, 400); return true
         }
         data.color = body.color
       }
-      if (body.avatar !== undefined) data.avatar = typeof body.avatar === 'string' ? body.avatar : null
       if (body.tasteProfile !== undefined) data.tasteProfile = typeof body.tasteProfile === 'string' ? body.tasteProfile.trim() || null : null
       const updated = updateMediaUser(targetId, data)
       if (!updated) { json(ctx.res, { error: 'Felhasználó nem található' }, 404); return true }

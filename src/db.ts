@@ -465,6 +465,69 @@ export function getGroupRecommendations(groupUserIds: number[]): RecRow[] {
   `).all(...groupUserIds) as RecRow[]
 }
 
+export interface UserStats {
+  seen: number
+  watchlist: number
+  in_progress: number
+  not_interested: number
+  avg_score: number | null
+  total_runtime_min: number | null
+  top_genres: Array<{ name: string; count: number }>
+  score_dist: Array<{ score: number; count: number }>
+}
+
+export function getUserStats(userId: number): UserStats {
+  const counts = db.prepare(
+    'SELECT state, COUNT(*) as cnt FROM media_user_status WHERE user_id = ? GROUP BY state'
+  ).all(userId) as Array<{ state: string; cnt: number }>
+  const stateMap = Object.fromEntries(counts.map(r => [r.state, r.cnt]))
+
+  const avgRow = db.prepare(
+    'SELECT AVG(CAST(score AS REAL)) as avg FROM media_user_status WHERE user_id = ? AND score IS NOT NULL AND state = \'seen\''
+  ).get(userId) as { avg: number | null }
+
+  const runtimeRow = db.prepare(`
+    SELECT SUM(mi.runtime) as total
+    FROM media_user_status mus
+    JOIN media_items mi ON mi.id = mus.media_id
+    WHERE mus.user_id = ? AND mus.state = 'seen' AND mi.type = 'film' AND mi.runtime IS NOT NULL
+  `).get(userId) as { total: number | null }
+
+  const genreRows = db.prepare(`
+    SELECT mi.genres FROM media_user_status mus
+    JOIN media_items mi ON mi.id = mus.media_id
+    WHERE mus.user_id = ? AND mus.state = 'seen' AND mi.genres IS NOT NULL
+  `).all(userId) as Array<{ genres: string }>
+  const genreCount: Record<string, number> = {}
+  for (const row of genreRows) {
+    try {
+      const parsed = JSON.parse(row.genres) as Array<{ name?: string } | string>
+      for (const g of parsed) {
+        const name = typeof g === 'string' ? g : (g.name ?? '')
+        if (name) genreCount[name] = (genreCount[name] ?? 0) + 1
+      }
+    } catch { /* skip */ }
+  }
+  const top_genres = Object.entries(genreCount)
+    .sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([name, count]) => ({ name, count }))
+
+  const scoreDist = db.prepare(
+    'SELECT score, COUNT(*) as cnt FROM media_user_status WHERE user_id = ? AND score IS NOT NULL GROUP BY score ORDER BY score'
+  ).all(userId) as Array<{ score: number; cnt: number }>
+
+  return {
+    seen: stateMap['seen'] ?? 0,
+    watchlist: stateMap['watchlist'] ?? 0,
+    in_progress: stateMap['in_progress'] ?? 0,
+    not_interested: stateMap['not_interested'] ?? 0,
+    avg_score: avgRow.avg != null ? Math.round(avgRow.avg * 10) / 10 : null,
+    total_runtime_min: runtimeRow.total ?? null,
+    top_genres,
+    score_dist: scoreDist.map(r => ({ score: r.score, count: r.cnt })),
+  }
+}
+
 export function getUserSeenProfile(userId: number): Array<{ title: string; genres: string | null; score: number }> {
   return db.prepare(`
     SELECT mi.title, mi.genres, mus.score

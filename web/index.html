@@ -12,8 +12,8 @@
     <span class="mozi-logo">🎬 MoziRadar</span>
     <div class="mozi-header-spacer"></div>
     <div class="mozi-active-user" id="headerUser" hidden>
-      <div class="mozi-avatar-sm" id="headerAvatar"></div>
-      <span class="mozi-active-user-name" id="headerName"></span>
+      <div class="mozi-avatar-sm mozi-avatar-clickable" id="headerAvatar"></div>
+      <span class="mozi-active-user-name mozi-avatar-clickable" id="headerName"></span>
       <button class="mozi-btn-ghost" id="headerAdminBtn" hidden>Admin</button>
       <button class="mozi-btn-ghost" id="headerSwitchBtn">Profilváltás</button>
     </div>
@@ -121,6 +121,14 @@
     <div class="mozi-modal" id="moziUserAdminModal">
       <button class="mozi-modal-close" id="moziUserAdminClose" aria-label="Bezárás">&times;</button>
       <div class="mozi-modal-body" id="moziUserAdminBody"></div>
+    </div>
+  </div>
+
+  <!-- Profile modal (any user) -->
+  <div class="mozi-modal-overlay" id="moziProfileOverlay" role="dialog" aria-modal="true">
+    <div class="mozi-modal" id="moziProfileModal">
+      <button class="mozi-modal-close" id="moziProfileClose" aria-label="Bezárás">&times;</button>
+      <div class="mozi-modal-body" id="moziProfileBody"><div class="mozi-loading">Betöltés...</div></div>
     </div>
   </div>
 
