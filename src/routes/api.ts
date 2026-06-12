@@ -230,9 +230,13 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
     }
 
     if (path === '/api/catalog' && method === 'POST') {
-      const body = await parseBody<{ adminId?: unknown; type?: unknown; title?: unknown; notes?: unknown }>(ctx.req, ctx.res)
+      const body = await parseBody<{ userId?: unknown; adminId?: unknown; type?: unknown; title?: unknown; notes?: unknown }>(ctx.req, ctx.res)
       if (!body) return true
-      if (!requireAdmin(ctx.res, body.adminId)) return true
+      const actorId = typeof body.userId === 'number' ? body.userId
+        : typeof body.adminId === 'number' ? body.adminId : NaN
+      if (isNaN(actorId) || !getMediaUserById(actorId)) {
+        json(ctx.res, { error: 'Bejelentkezés szükséges' }, 403); return true
+      }
       if (!body.type || !['film', 'series'].includes(body.type as string)) {
         json(ctx.res, { error: 'type kötelező: film vagy series' }, 400); return true
       }

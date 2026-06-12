@@ -130,13 +130,16 @@ Ezután megjelenik a főoldal a filmes profilválasztóval.
 
 ### Filmek / sorozatok hozzáadása
 
-**Kézzel:**
-1. A fejlécben kattints az **"Admin"** gombra
-2. Válaszd a **"Katalógus"** fület
-3. Válaszd a típust (film / sorozat), írd be a címet, kattints **"Hozzáadás"**
-4. A TMDB automatikusan megkeresi a poszterét és adatait
+**Kézzel (bármely felhasználó):**
+1. A könyvtár oldalon kattints a **"+ Hozzáadás"** gombra (a fülsor jobb szélén)
+2. Válaszd a típust (film / sorozat) és írd be a címet
+3. Kattints **"Hozzáadás"** — a TMDB automatikusan megkeresi a poszterét és adatait
 
-**Helyi filmek beolvasása (ha van filmtárad):**
+**Kézzel (admin, több opció):**
+1. A fejlécben kattints az **"Admin"** gombra → **"Katalógus"** fül
+2. Ugyanúgy: típus + cím + Hozzáadás
+
+**Helyi filmek beolvasása (ha van filmtárad — csak admin):**
 
 Hozz létre egy `.env` nevű fájlt a MoziRadar mappában (Notepad-del is megnyitható), és írd bele:
 
@@ -154,6 +157,8 @@ docker compose up --build -d
 ```
 
 Ezután: **Admin → Katalógus → "Filmek beolvasása"** gomb — az alkalmazás végigmegy a mappán, minden filmet megkeres a TMDB-n és hozzáadja a katalógushoz.
+
+> **Fontos:** A beolvasás nem automatikus. Ha később új film kerül a mappába, a gombot újra meg kell nyomni — csak az újak kerülnek be, a már meglévők nem duplázódnak.
 
 ---
 

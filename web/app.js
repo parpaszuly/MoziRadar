@@ -822,7 +822,7 @@ async function saveBeallitasok() {
 }
 
 async function addCatalogItem() {
-  if (!activeUser?.is_admin) return
+  if (!activeUser) return
   const type = document.getElementById('newItemType')?.value || 'film'
   const title = document.getElementById('newItemTitle')?.value.trim()
   if (!title) { showToast('Adj meg egy címet.'); return }
@@ -832,7 +832,7 @@ async function addCatalogItem() {
     const data = await apiFetch('/api/catalog', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ adminId: activeUser.id, type, title }),
+      body: JSON.stringify({ userId: activeUser.id, type, title }),
     })
     const item = data.item
     if (item) { catalogItems.push(item); renderCatalog() }
@@ -842,6 +842,61 @@ async function addCatalogItem() {
   } catch (err) {
     if (resultEl) resultEl.innerHTML = `<div class="mozi-admin-err">Hiba: ${escapeHtml(err.message)}</div>`
   }
+}
+
+function openAddItemModal() {
+  if (!activeUser) return
+  document.getElementById('moziDetailBody').innerHTML = `
+    <div class="mozi-admin-edit">
+      <h2 class="mozi-useradmin-title" style="margin-bottom:16px">Új cím hozzáadása</h2>
+      <div class="mozi-admin-edit-fields">
+        <label class="mozi-admin-label">Típus
+          <select id="addModalType" class="mozi-useradmin-name" style="max-width:140px">
+            <option value="film">Film</option>
+            <option value="series">Sorozat</option>
+          </select>
+        </label>
+        <label class="mozi-admin-label">Cím
+          <input type="text" id="addModalTitle" class="mozi-useradmin-name"
+            placeholder="pl. Inception"
+            onkeydown="if(event.key==='Enter') submitAddItemModal()">
+        </label>
+      </div>
+      <p class="mozi-admin-hint" style="margin-top:6px">A TMDB automatikusan megkeresi a poszterét és adatait.</p>
+      <div class="mozi-admin-edit-actions" style="margin-top:14px">
+        <button class="mozi-btn-primary" id="addModalBtn" onclick="submitAddItemModal()">Hozzáadás</button>
+        <span id="addModalResult" style="font-size:13px"></span>
+      </div>
+    </div>`
+  document.getElementById('moziDetailOverlay').classList.add('active')
+  document.body.style.overflow = 'hidden'
+  setTimeout(() => document.getElementById('addModalTitle')?.focus(), 50)
+}
+
+async function submitAddItemModal() {
+  if (!activeUser) return
+  const type = document.getElementById('addModalType')?.value || 'film'
+  const title = document.getElementById('addModalTitle')?.value.trim()
+  const resultEl = document.getElementById('addModalResult')
+  const btn = document.getElementById('addModalBtn')
+  if (!title) { if (resultEl) resultEl.textContent = 'Adj meg egy címet.'; return }
+  if (btn) { btn.disabled = true; btn.textContent = 'Keresés...' }
+  if (resultEl) resultEl.textContent = ''
+  try {
+    const data = await apiFetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: activeUser.id, type, title }),
+    })
+    const item = data.item
+    if (item) { catalogItems.push(item); renderCatalog() }
+    if (resultEl) resultEl.innerHTML = `<span style="color:var(--success)">✓ ${escapeHtml(item?.title || title)} hozzáadva</span>`
+    const titleEl = document.getElementById('addModalTitle')
+    if (titleEl) { titleEl.value = ''; titleEl.focus() }
+  } catch (err) {
+    if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">Hiba: ${escapeHtml(err.message)}</span>`
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Hozzáadás' }
 }
 
 async function runMediaScan() {
