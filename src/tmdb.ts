@@ -9,6 +9,7 @@ function tmdbApiKey(): string | null {
 }
 
 interface TmdbEnrichment {
+  title: string | null
   poster_url: string | null
   overview: string | null
   year: number | null
@@ -17,7 +18,7 @@ interface TmdbEnrichment {
 
 export async function tmdbSearch(type: 'film' | 'series', title: string): Promise<TmdbEnrichment> {
   const apiKey = tmdbApiKey()
-  if (!apiKey) return { poster_url: null, overview: null, year: null, tmdb_id: null }
+  if (!apiKey) return { title: null, poster_url: null, overview: null, year: null, tmdb_id: null }
 
   const endpoint = type === 'film' ? 'movie' : 'tv'
   const titleKey = type === 'film' ? 'title' : 'name'
@@ -57,6 +58,7 @@ export async function tmdbSearch(type: 'film' | 'series', title: string): Promis
       const tmdb_id = typeof hit.id === 'number' ? hit.id : null
 
       return {
+        title: (hit[titleKey] as string | undefined) || null,
         poster_url: posterPath ? `${TMDB_IMG}${posterPath}` : null,
         overview: rawOverview?.trim() || null,
         year,
@@ -75,7 +77,7 @@ export async function tmdbSearch(type: 'film' | 'series', title: string): Promis
     }
     return hu
   }
-  return (await query('en-US')) ?? { poster_url: null, overview: null, year: null, tmdb_id: null }
+  return (await query('en-US')) ?? { title: null, poster_url: null, overview: null, year: null, tmdb_id: null }
 }
 
 export async function tmdbFetchCast(type: 'film' | 'series', tmdbId: number): Promise<Array<{name: string; character: string}>> {

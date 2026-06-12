@@ -855,10 +855,18 @@ async function runMediaScan() {
       body: JSON.stringify({ adminId: activeUser.id }),
     })
     if (resultEl) {
-      if (data.added === 0 && data.skipped === 0) {
+      if (data.added === 0 && data.skipped === 0 && !data.missed?.length) {
         resultEl.innerHTML = `<div class="mozi-admin-hint">${escapeHtml(data.message || 'Nincs új fájl.')}</div>`
       } else {
-        resultEl.innerHTML = `<div class="mozi-admin-ok">Hozzáadva: ${data.added}, már létező: ${data.skipped} (${data.total} fájl)</div>`
+        let html = `<div class="mozi-admin-ok">Hozzáadva: ${data.added}, már létező: ${data.skipped} (${data.total} jelölt)</div>`
+        if (data.missed?.length) {
+          html += `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mozi-warn,#e0a800);font-size:0.93em">${data.missed.length} fájl nem azonosítható TMDB-n (nem lett hozzáadva)</summary><ul style="margin:6px 0 0 16px;font-size:0.88em;color:var(--mozi-text-muted,#aaa)">`
+          for (const m of data.missed) {
+            html += `<li><b>${escapeHtml(m.title)}</b>${m.year ? ` (${m.year})` : ''} — <span style="color:#888">${escapeHtml(m.rawName)}</span></li>`
+          }
+          html += '</ul></details>'
+        }
+        resultEl.innerHTML = html
       }
     }
     if (data.added > 0) {

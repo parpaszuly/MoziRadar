@@ -608,13 +608,14 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         return true
       }
 
-      type Candidate = { title: string; year: number | null; type: 'film' | 'series' }
+      type Candidate = { rawName: string; title: string; year: number | null; type: 'film' | 'series' }
       const candidates: Candidate[] = []
       for (const [dir, files] of byDir) {
         if (dir === MEDIA_DIR) {
           for (const f of files) {
-            const { title, year } = cleanTitle(basename(f, extname(f)))
-            candidates.push({ title, year, type: 'film' })
+            const rawName = basename(f, extname(f))
+            const { title, year } = cleanTitle(rawName)
+            candidates.push({ rawName, title, year, type: 'film' })
           }
         } else {
           const dirName = basename(dir)
@@ -622,21 +623,24 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
           const isSeasonDir = /^(season|évad|sorozat|series|s)\s*\d+$/i.test(dirName) || /^S\d{2}$/i.test(dirName)
           if (isSeasonDir) {
             const { title, year } = cleanTitle(parentDir)
-            candidates.push({ title, year, type: 'series' })
+            candidates.push({ rawName: parentDir, title, year, type: 'series' })
           } else if (files.length > 1) {
             const { title, year } = cleanTitle(dirName)
-            candidates.push({ title, year, type: 'series' })
+            candidates.push({ rawName: dirName, title, year, type: 'series' })
           } else {
-            const { title, year } = cleanTitle(basename(files[0], extname(files[0])))
-            candidates.push({ title, year, type: 'film' })
+            const rawName = basename(files[0], extname(files[0]))
+            const { title, year } = cleanTitle(rawName)
+            candidates.push({ rawName, title, year, type: 'film' })
           }
         }
       }
 
+      type MissedItem = { rawName: string; title: string; year: number | null; type: string; reason: string }
       let added = 0; let skipped = 0
+      const missed: MissedItem[] = []
       const seen = new Set<string>()
       const seenTmdbIds = new Set<number>()
-      for (const { title, year, type } of candidates) {
+      for (const { rawName, title, year, type } of candidates) {
         const key = `${title.toLowerCase()}|${year ?? ''}`
         if (seen.has(key)) { skipped++; continue }
         seen.add(key)
@@ -646,18 +650,20 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
           if (seenTmdbIds.has(tmdbResult.tmdb_id) || findMediaItemByTmdbId(tmdbResult.tmdb_id)) { skipped++; continue }
           seenTmdbIds.add(tmdbResult.tmdb_id)
         } else {
-          if (findMediaItemByTitleYear(title, year)) { skipped++; continue }
+          const existingTitle = findMediaItemByTitleYear(title, year)
+          if (existingTitle) { skipped++; continue }
+          missed.push({ rawName, title, year, type, reason: 'Nem találtam TMDB-n' })
+          continue
         }
-        const item = createMediaItem({ type, title, year: (tmdbResult?.year ?? year) ?? undefined, source: 'scan' })
-        if (tmdbResult?.tmdb_id) {
-          try {
-            const [cast, details] = await Promise.all([tmdbFetchCast(type, tmdbResult.tmdb_id), tmdbFetchDetails(type, tmdbResult.tmdb_id)])
-            updateMediaItemEnrichment(item.id, { tmdb_id: tmdbResult.tmdb_id, poster_url: tmdbResult.poster_url ?? undefined, overview: tmdbResult.overview ?? undefined, year: tmdbResult.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
-          } catch { /* tolerated */ }
-        }
+        const finalTitle = tmdbResult.title ?? title
+        const item = createMediaItem({ type, title: finalTitle, year: (tmdbResult.year ?? year) ?? undefined, source: 'scan' })
+        try {
+          const [cast, details] = await Promise.all([tmdbFetchCast(type, tmdbResult.tmdb_id), tmdbFetchDetails(type, tmdbResult.tmdb_id)])
+          updateMediaItemEnrichment(item.id, { tmdb_id: tmdbResult.tmdb_id, poster_url: tmdbResult.poster_url ?? undefined, overview: tmdbResult.overview ?? undefined, year: tmdbResult.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
+        } catch { /* tolerated */ }
         added++
       }
-      json(ctx.res, { ok: true, added, skipped, total: candidates.length })
+      json(ctx.res, { ok: true, added, skipped, total: candidates.length, missed })
       return true
     }
 
