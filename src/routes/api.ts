@@ -398,7 +398,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
     }
 
     if (path === '/api/recommend/refresh' && method === 'POST') {
-      const body = await parseBody<{ userId?: unknown }>(ctx.req, ctx.res)
+      const body = await parseBody<{ userId?: unknown; pickedIds?: unknown }>(ctx.req, ctx.res)
       if (!body) return true
       const userId = typeof body.userId === 'number' ? body.userId : NaN
       const user = !isNaN(userId) ? getMediaUserById(userId) : undefined
@@ -408,30 +408,46 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         json(ctx.res, { error: 'AI API kulcs nincs beállítva (admin beállítások)' }, 503); return true
       }
 
-      const seenProfile = getUserSeenProfile(userId)
+      const pickedIds = Array.isArray(body.pickedIds)
+        ? (body.pickedIds as unknown[]).filter((id): id is number => typeof id === 'number' && Number.isInteger(id) && id > 0).slice(0, 3)
+        : null
+
       const excludedTitles = getUserExcludedTitles(userId, user.key)
-
-      const profileLines = seenProfile.length
-        ? seenProfile.map(it => {
-            const genres = it.genres ? (() => { try { return (JSON.parse(it.genres!) as Array<{name?:string}>).map(g => g.name ?? g).join(', ') } catch { return it.genres } })() : ''
-            return `- ${it.title} (${it.score}/10)${genres ? ` [${genres}]` : ''}`
-          }).join('\n')
-        : '(nincs értékelt film/sorozat még)'
-
       const exclusionBlock = excludedTitles.length ? excludedTitles.join(', ') : '(nincs kizárandó cím)'
+      const tasteDesc = user.taste_profile?.trim() ? `User's own taste description: ${user.taste_profile.trim()}` : ''
 
-      const tasteDesc = user.taste_profile?.trim()
-        ? `\nUser's own taste description: ${user.taste_profile.trim()}`
-        : ''
+      let task: string
+      let profileHeader: string
+      let profileLines: string
+
+      if (pickedIds && pickedIds.length > 0) {
+        const pickedItems = pickedIds.map(id => getMediaItem(id)).filter((item): item is MediaItem => !!item)
+        task = 'recommend 8-10 films and/or series similar in style, theme, and feel to these titles the user loved:'
+        profileHeader = 'Reference titles:'
+        profileLines = pickedItems.map(item => {
+          const genres = item.genres ? (() => { try { return (JSON.parse(item.genres!) as Array<{name?:string}>).map(g => g.name ?? String(g)).join(', ') } catch { return item.genres } })() : ''
+          return `- ${item.title}${item.year ? ` (${item.year})` : ''}${genres ? ` [${genres}]` : ''}`
+        }).join('\n') || '(no items)'
+      } else {
+        const seenProfile = getUserSeenProfile(userId)
+        task = 'recommend 8-10 films and/or series for a user based on their taste profile below.'
+        profileHeader = 'Rated titles (title, score/10, genres):'
+        profileLines = seenProfile.length
+          ? seenProfile.map(it => {
+              const genres = it.genres ? (() => { try { return (JSON.parse(it.genres!) as Array<{name?:string}>).map(g => g.name ?? g).join(', ') } catch { return it.genres } })() : ''
+              return `- ${it.title} (${it.score}/10)${genres ? ` [${genres}]` : ''}`
+            }).join('\n')
+          : '(nincs értékelt film/sorozat még)'
+      }
 
       const prompt = [
         'You are a film and TV series recommendation engine. Respond with ONLY a valid JSON array — no markdown, no explanation, no code fences.',
         '',
-        'Task: recommend 8-10 films and/or series for a user based on their taste profile below.',
+        `Task: ${task}`,
         '',
-        'Rated titles (title, score/10, genres):',
+        profileHeader,
         profileLines,
-        ...(tasteDesc ? [tasteDesc] : []),
+        ...(tasteDesc ? ['', tasteDesc] : []),
         '',
         'EXCLUSION LIST — do NOT recommend any title on this list:',
         exclusionBlock,

@@ -12,6 +12,7 @@ let triageMode = false
 let selectedItems = new Set()
 let openDetailId = null   // media_id of currently open detail modal (null = closed)
 let recPersonalData = null  // cached GET /api/recommend response
+let pickerSelected = new Set()  // media item IDs selected in picker modal (max 3)
 let ajanlokEditorRows = [] // mutable rows for the recommendation editor
 let pendingSeenId = null   // card with open inline score picker on the 'none' tab
 const extRecCache = new Map()  // recId -> item object for external rec popup
@@ -1305,10 +1306,23 @@ async function renderAjanlok() {
   }).join('')
 
   grid.innerHTML = `<div class="mozi-ajanlok">
+    <details class="mozi-rec-info">
+      <summary>Hogyan működik az AI ajánló?</summary>
+      <div class="mozi-rec-info-body">
+        Az ajánló a következők alapján választ:
+        <ol>
+          <li><b>Látott és pontozott filmjeid / sorozataid</b> — cím, pontszám és műfaj alapján következtet az ízlésedre</li>
+          <li><b>Ízlés leírásod</b> — ha kitöltötted a profilodban ("Milyen filmeket szeretek?")</li>
+          <li><b>Kizárja</b> amit már láttál, watchlistre vagy "nem érdekel"-re tettél, és ami korábban már AI ajánlóban szerepelt</li>
+        </ol>
+        A <i>Filmek alapján</i> gombbal max. 3 konkrét filmet / sorozatot jelölhetsz ki, és az AI azokhoz hasonlókat ajánl.
+      </div>
+    </details>
     <section class="mozi-ajanlok-section">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
         <div class="mozi-block-header" style="margin:0">Személyes</div>
         <button class="mozi-btn-ghost" id="aiRecsBtn" onclick="requestAiRecs()" style="margin-left:auto;font-size:0.88em">AI ajánlókat kérek</button>
+        <button class="mozi-btn-ghost" onclick="openPickerModal()" style="font-size:0.88em">Filmek alapján</button>
       </div>
       <div id="ajanlokPersonal"><div class="mozi-loading">Betöltés...</div></div>
     </section>
@@ -1339,6 +1353,97 @@ async function renderAjanlok() {
     const el = document.getElementById('ajanlokPersonal')
     if (el) el.innerHTML = '<div class="mozi-empty">Ajánlások nem tölthetők be.</div>'
   }
+}
+
+function openPickerModal() {
+  if (!activeUser) return
+  pickerSelected = new Set()
+  const searchEl = document.getElementById('pickerSearch')
+  if (searchEl) searchEl.value = ''
+  renderPickerList('')
+  document.getElementById('moziPickerOverlay').classList.add('active')
+  document.body.style.overflow = 'hidden'
+  setTimeout(() => searchEl?.focus(), 50)
+}
+
+function closePickerModal() {
+  document.getElementById('moziPickerOverlay').classList.remove('active')
+  document.body.style.overflow = ''
+}
+
+function renderPickerList(query) {
+  const listEl = document.getElementById('pickerList')
+  if (!listEl || !activeUser) return
+  const uid = String(activeUser.id)
+  const seenItems = catalogItems.filter(item => (statusMap[String(item.id)] || {})[uid]?.state === 'seen')
+  const q = query.trim().toLowerCase()
+  const filtered = q ? seenItems.filter(i => i.title.toLowerCase().includes(q)) : seenItems
+  filtered.sort((a, b) => {
+    const asel = pickerSelected.has(a.id), bsel = pickerSelected.has(b.id)
+    if (asel && !bsel) return -1
+    if (!asel && bsel) return 1
+    return a.title.localeCompare(b.title, 'hu')
+  })
+  if (!filtered.length) {
+    listEl.innerHTML = '<div class="mozi-empty" style="padding:20px 0">Nincs találat.</div>'
+    updatePickerCount()
+    return
+  }
+  const maxReached = pickerSelected.size >= 3
+  listEl.innerHTML = filtered.map(item => {
+    const selected = pickerSelected.has(item.id)
+    const disabled = !selected && maxReached
+    const poster = item.poster_url
+      ? `<img class="mozi-picker-poster" src="${escapeHtml(item.poster_url)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+      : `<div class="mozi-picker-poster mozi-picker-poster--empty"></div>`
+    const year = item.year ? ` (${item.year})` : ''
+    const type = item.type === 'series' ? ' · sorozat' : ''
+    return `<div class="mozi-picker-item${selected ? ' mozi-picker-item--selected' : ''}${disabled ? ' mozi-picker-item--disabled' : ''}" onclick="togglePickerItem(${item.id})">
+      <div class="mozi-picker-check${selected ? ' mozi-picker-check--on' : ''}"></div>
+      ${poster}
+      <span class="mozi-picker-title">${escapeHtml(item.title)}<span class="mozi-picker-meta">${year}${type}</span></span>
+    </div>`
+  }).join('')
+  updatePickerCount()
+}
+
+function togglePickerItem(id) {
+  if (pickerSelected.has(id)) {
+    pickerSelected.delete(id)
+  } else if (pickerSelected.size < 3) {
+    pickerSelected.add(id)
+  }
+  renderPickerList(document.getElementById('pickerSearch')?.value || '')
+}
+
+function updatePickerCount() {
+  const countEl = document.getElementById('pickerCount')
+  const submitBtn = document.getElementById('pickerSubmitBtn')
+  if (countEl) countEl.textContent = `${pickerSelected.size} / 3 kijelölve`
+  if (submitBtn) submitBtn.disabled = pickerSelected.size === 0
+}
+
+async function requestAiRecsFromPicked() {
+  if (!activeUser || !pickerSelected.size) return
+  closePickerModal()
+  const el = document.getElementById('ajanlokPersonal')
+  const btn = document.getElementById('aiRecsBtn')
+  if (btn) { btn.disabled = true; btn.textContent = 'Generálás...' }
+  if (el) el.innerHTML = '<div class="mozi-loading">AI ajánlókat generálok a kiválasztott filmek alapján...</div>'
+  try {
+    await apiFetch('/api/recommend/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: activeUser.id, pickedIds: [...pickerSelected] }),
+    })
+    recPersonalData = null
+    const data = await apiFetch(`/api/recommend?user=${activeUser.id}`)
+    recPersonalData = data
+    if (el) el.innerHTML = renderPersonalRec(data)
+  } catch (err) {
+    if (el) el.innerHTML = `<div class="mozi-empty">Hiba: ${escapeHtml(err.message)}</div>`
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'AI ajánlókat kérek' }
 }
 
 async function requestAiRecs() {
@@ -1664,9 +1769,15 @@ async function init() {
   document.getElementById('moziDetailOverlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) moziCloseDetail()
   })
+  document.getElementById('moziPickerClose').addEventListener('click', closePickerModal)
+  document.getElementById('moziPickerOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closePickerModal()
+  })
+
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (document.getElementById('moziProfileOverlay').classList.contains('active')) closeProfileModal()
+      if (document.getElementById('moziPickerOverlay').classList.contains('active')) closePickerModal()
+      else if (document.getElementById('moziProfileOverlay').classList.contains('active')) closeProfileModal()
       else if (document.getElementById('moziUserAdminOverlay').classList.contains('active')) closeUserAdmin()
       else if (document.getElementById('moziDetailOverlay').classList.contains('active')) moziCloseDetail()
     }

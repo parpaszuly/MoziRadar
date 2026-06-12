@@ -124,6 +124,22 @@
     </div>
   </div>
 
+  <!-- Film picker modal for "recommend from selected" -->
+  <div class="mozi-modal-overlay" id="moziPickerOverlay" role="dialog" aria-modal="true">
+    <div class="mozi-modal mozi-picker-modal" id="moziPickerModal">
+      <button class="mozi-modal-close" id="moziPickerClose" aria-label="Bezárás">&times;</button>
+      <div class="mozi-modal-body mozi-picker-body">
+        <h2 class="mozi-useradmin-title" style="margin-bottom:12px">Válassz max. 3 filmet / sorozatot</h2>
+        <input type="text" id="pickerSearch" class="mozi-search-input" placeholder="Keresés a látott filmek között..." oninput="renderPickerList(this.value)">
+        <div id="pickerList" class="mozi-picker-list"></div>
+        <div class="mozi-picker-actions">
+          <span id="pickerCount" class="mozi-picker-count">0 / 3 kijelölve</span>
+          <button class="mozi-btn-primary" id="pickerSubmitBtn" onclick="requestAiRecsFromPicked()" disabled>Ajánlást kérek</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Profile modal (any user) -->
   <div class="mozi-modal-overlay" id="moziProfileOverlay" role="dialog" aria-modal="true">
     <div class="mozi-modal" id="moziProfileModal">
