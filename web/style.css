@@ -1602,14 +1602,20 @@ body.triage-active #catalogGrid { padding-bottom: 72px; }
   border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .mozi-sort-select {
-  background: var(--surface);
+  background: var(--bg);
   color: var(--text);
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
   border-radius: var(--radius-sm);
   padding: 5px 10px;
   font-size: 13px;
   cursor: pointer;
   flex-shrink: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.mozi-sort-select option {
+  background: var(--bg);
+  color: var(--text);
 }
 .mozi-genre-chips {
   display: flex;
