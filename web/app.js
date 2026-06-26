@@ -1276,7 +1276,7 @@ function renderExtRecDetailBody(item) {
   const title = escapeHtml(String(item.title || ''))
   const year = item.year ? ` (${escapeHtml(String(item.year))})` : ''
   const poster = item.poster_url
-    ? `<img class="mozi-detail-poster" src="${escapeHtml(item.poster_url)}" alt="${title}">`
+    ? `<img class="mozi-detail-poster mozi-detail-poster--zoom" src="${escapeHtml(item.poster_url)}" alt="${title}">`
     : `<div class="mozi-detail-poster-placeholder">${item.type === 'series' ? '📺' : '🎬'}</div>`
   const overviewHtml = item.overview
     ? `<div class="mozi-detail-overview">${escapeHtml(String(item.overview))}</div>`
@@ -1284,10 +1284,13 @@ function renderExtRecDetailBody(item) {
   const reasonHtml = item.reason
     ? `<div class="mozi-detail-reason"><em>${escapeHtml(String(item.reason))}</em></div>`
     : ''
+  const ytQuery = encodeURIComponent((item.title || '') + (item.year ? ` ${item.year}` : '') + ' trailer')
+  const trailerHtml = `<a href="https://www.youtube.com/results?search_query=${ytQuery}" target="_blank" rel="noopener noreferrer" class="mozi-trailer-link">▶ Trailer</a>`
   return `<div class="mozi-detail-top">
     ${poster}
     <div class="mozi-detail-info">
       <div class="mozi-detail-title">${title}${year}</div>
+      ${trailerHtml}
       ${reasonHtml}
       ${overviewHtml}
       ${renderExtRecStatePicker(item.id)}

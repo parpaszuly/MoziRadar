@@ -11,11 +11,15 @@ Mindenki saját profillal jelöli meg mit látott, mit szeretne megnézni, és 1
 - 👤 **Több felhasználó** — mindenki saját profillal, saját pontozásokkal és ajánlókkal
 - 🎬 **Filmkövető** — látott / megnézném / folyamatban / nem érdekel állapotok
 - ⭐ **Pontozás** — 1–10-es skálán
+- 🔎 **Globális kereső** — a keresés kategóriától függetlenül az összes filmen/sorozaton keres
+- ▶️ **YouTube trailer link** — minden film/sorozat részletes nézetében közvetlen trailer keresés
+- 🔍 **Poszter nagyítás** — a részletes nézetben a poszter kattintásra teljes képernyőn jelenik meg
 - 🤖 **AI ajánló** — a pontozásaid és ízlés leírásod alapján személyre szabott ajánlások
-- 🔍 **Filmek alapján ajánló** — válassz ki 1–3 filmet és az AI hasonlókat ajánl
+- 🎯 **Filmek alapján ajánló** — válassz ki 1–3 filmet és az AI hasonlókat ajánl
 - 👥 **Közös este mód** — több ember alapján közös ajánló
 - 📁 **Helyi filmek beolvasása** — ha van helyi filmmappád, automatikusan beolvassa és TMDB-n megkeresi
 - 📊 **Profil statisztikák** — mennyi filmet láttál, kedvenc műfajok, pontozási eloszlás
+- 📱 **Mobilbarát** — görgetős fülsor, alulról felcsúszó modális, telefon-optimalizált elrendezés
 - 🌐 **LAN elérés** — a háztartásban bárki elérheti böngészőből
 
 ---
