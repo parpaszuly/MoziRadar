@@ -19,6 +19,13 @@ Mindenki saját profillal jelöli meg mit látott, mit szeretne megnézni, és 1
 - 👥 **Közös este mód** — több ember alapján közös ajánló
 - 📁 **Helyi filmek beolvasása** — ha van helyi filmmappád, automatikusan beolvassa és TMDB-n megkeresi
 - 📊 **Profil statisztikák** — mennyi filmet láttál, kedvenc műfajok, pontozási eloszlás
+- 📺 **Epizód követés** — sorozatoknál az aktuális évad/epizód nyilvántartása
+- 🍿 **Streaming platformok** — a detail nézetben megmutatja hol érhető el Magyarországon (Netflix, HBO stb.)
+- 🎬 **Hasonló filmek** — a detail nézetben TMDB-alapú hasonló ajánlások
+- 🔃 **Rendezés és műfaj szűrés** — cím, évjárat vagy értékelés szerint; műfaj chips szűrés
+- ⚡ **Élő frissítés (SSE)** — ha valaki más megváltoztat egy filmet, minden böngésző automatikusan frissül
+- 💾 **Adatbázis backup** — Admin → Beállítások → letölthető .db fájl
+- 📲 **PWA telepíthető** — telepíthető az asztali képernyőre vagy telefonra mint app
 - 📱 **Mobilbarát** — görgetős fülsor, alulról felcsúszó modális, telefon-optimalizált elrendezés
 - 🌐 **LAN elérés** — a háztartásban bárki elérheti böngészőből
 
@@ -232,6 +239,63 @@ Az **"Ajánló"** fülön a **"Közös este"** szekcióban:
 1. Pipáld be kik néznek ma együtt
 2. Kattints a **"Mehet"** gombra
 3. Az alkalmazás olyan filmeket ajánl, amiket senki nem látott még, és amiket valaki a csoportból magasra értékelt
+
+---
+
+## PWA — Telepítés telefonra / asztalgépre
+
+A MoziRadar telepíthető alkalmazásként: úgy viselkedik mint egy natív app (nincs böngésző-cím sáv, ikon az asztali képernyőn).
+
+### Android Chrome
+1. Nyisd meg a MoziRadar-t Chrome-ban
+2. A jobb felső sarokban a ⋮ menüben válaszd: **"Telepítés"** vagy **"Hozzáadás a kezdőképernyőhöz"**
+3. Erősítsd meg — megjelenik az ikon a telefon asztali képernyőjén
+
+### Asztali Chrome / Edge (Windows / Mac / Linux)
+1. Nyisd meg a MoziRadar-t (pl. `http://localhost:3421`)
+2. A jobb felső sarokban megjelenik egy ⊕ ikon (telepítés) — kattints rá
+3. Vagy a ⋮ menüből: **"A MoziRadar telepítése..."**
+
+### iOS Safari
+1. Nyisd meg a MoziRadar-t Safariban
+2. Az alsó eszközsoron koppints a Megosztás gombra (↑)
+3. Válaszd: **"Hozzáadás a főképernyőhöz"**
+
+> **Megjegyzés:** Az PWA offline módot is támogat (a korábban betöltött oldalak cache-elődnek). Az API hívásokhoz (filmek, értékelések) internet / LAN kapcsolat szükséges.
+
+---
+
+## Adatbázis backup és visszaállítás
+
+Az összes adat (filmek, értékelések, felhasználók) egyetlen SQLite fájlban van: `moziradar.db`.
+
+### Backup letöltése
+
+**Admin → Beállítások → "⬇ Backup letöltése"** gomb
+
+Ez letölt egy `moziradar-backup-DÁTUM.db` nevű fájlt.
+
+> Ajánlott rendszeresen (pl. hetente) biztonsági mentést készíteni, különösen frissítés előtt.
+
+### Visszaállítás
+
+Ha valami baj történik, a backup visszaállítható:
+
+1. Állítsd le a Dockert:
+```
+docker compose down
+```
+
+2. Másold a mentett fájlt a Docker volume-ba (a parancsot a MoziRadar mappájában futtasd):
+```
+docker run --rm -v moziradar_data:/data -v .:/backup alpine sh -c "cp /backup/moziradar-backup-*.db /data/moziradar.db"
+```
+*(Ha több backup fájlod van, írd ki pontosan a fájlnevet pl. `moziradar-backup-2025-03-15.db`)*
+
+3. Indítsd újra:
+```
+docker compose up -d
+```
 
 ---
 

@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#d97757">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MoziRadar">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
   <title>MoziRadar</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -91,6 +97,15 @@
           <button class="mozi-tab" data-tab="ajanlok">Ajánló</button>
         </div>
         <button class="mozi-btn-ghost mozi-triage-toggle" id="moziTriageToggle" hidden>Kijelölés</button>
+      </div>
+      <div class="mozi-sortfilter-row" id="moziSortFilterRow" hidden>
+        <select id="moziSort" class="mozi-sort-select" onchange="setSortBy(this.value)">
+          <option value="title">Cím A–Z</option>
+          <option value="year_new">Legújabb</option>
+          <option value="year_old">Legrégebb</option>
+          <option value="score">Legjobb értékelés</option>
+        </select>
+        <div id="moziGenreChips" class="mozi-genre-chips"></div>
       </div>
       <div class="mozi-catalog-grid" id="catalogGrid">
         <div class="mozi-loading">Betöltés...</div>

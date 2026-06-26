@@ -98,26 +98,76 @@ export async function tmdbFetchCast(type: 'film' | 'series', tmdbId: number): Pr
   }
 }
 
-export async function tmdbFetchDetails(type: 'film' | 'series', tmdbId: number): Promise<{runtime: number | null; genres: string[]}> {
+export async function tmdbFetchDetails(type: 'film' | 'series', tmdbId: number): Promise<{runtime: number | null; genres: string[]; seasons_count: number | null}> {
   const apiKey = tmdbApiKey()
-  if (!apiKey) return { runtime: null, genres: [] }
+  if (!apiKey) return { runtime: null, genres: [], seasons_count: null }
   const endpoint = type === 'film' ? 'movie' : 'tv'
   try {
     const url = `${TMDB_BASE}/${endpoint}/${tmdbId}?api_key=${apiKey}&language=hu-HU`
     const resp = await fetch(url, { signal: AbortSignal.timeout(8000) })
-    if (!resp.ok) return { runtime: null, genres: [] }
+    if (!resp.ok) return { runtime: null, genres: [], seasons_count: null }
     const data = await resp.json() as {
       runtime?: number
       episode_run_time?: number[]
       genres?: Array<{name: string}>
+      number_of_seasons?: number
     }
     const runtime = type === 'film'
       ? (data.runtime ?? null)
       : (data.episode_run_time?.[0] ?? null)
     const genres = (data.genres ?? []).map(g => g.name).filter(Boolean)
-    return { runtime, genres }
+    const seasons_count = type === 'series' ? (typeof data.number_of_seasons === 'number' ? data.number_of_seasons : null) : null
+    return { runtime, genres, seasons_count }
   } catch {
-    return { runtime: null, genres: [] }
+    return { runtime: null, genres: [], seasons_count: null }
+  }
+}
+
+export async function tmdbFetchSimilar(type: 'film' | 'series', tmdbId: number): Promise<Array<{title: string; year: number | null; poster_url: string | null; tmdb_id: number; type: string}>> {
+  const apiKey = tmdbApiKey()
+  if (!apiKey) return []
+  const endpoint = type === 'film' ? 'movie' : 'tv'
+  const titleKey = type === 'film' ? 'title' : 'name'
+  const dateKey = type === 'film' ? 'release_date' : 'first_air_date'
+  try {
+    const url = `${TMDB_BASE}/${endpoint}/${tmdbId}/similar?api_key=${apiKey}&language=hu-HU&page=1`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    if (!resp.ok) return []
+    const data = await resp.json() as { results?: Array<Record<string, unknown>> }
+    return (data.results ?? []).slice(0, 8).map(r => ({
+      title: String(r[titleKey] ?? ''),
+      year: r[dateKey] ? parseInt(String(r[dateKey]).slice(0, 4), 10) || null : null,
+      poster_url: r.poster_path ? `${TMDB_IMG}${r.poster_path}` : null,
+      tmdb_id: typeof r.id === 'number' ? r.id : 0,
+      type,
+    })).filter(r => r.title && r.tmdb_id)
+  } catch {
+    return []
+  }
+}
+
+export async function tmdbFetchProviders(type: 'film' | 'series', tmdbId: number, country = 'HU'): Promise<Array<{name: string; logo_url: string; type: string}>> {
+  const apiKey = tmdbApiKey()
+  if (!apiKey) return []
+  const endpoint = type === 'film' ? 'movie' : 'tv'
+  const TMDB_LOGO = 'https://image.tmdb.org/t/p/original'
+  try {
+    const url = `${TMDB_BASE}/${endpoint}/${tmdbId}/watch/providers?api_key=${apiKey}`
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) })
+    if (!resp.ok) return []
+    const data = await resp.json() as { results?: Record<string, { flatrate?: Array<{provider_name: string; logo_path: string}>; rent?: Array<{provider_name: string; logo_path: string}>; buy?: Array<{provider_name: string; logo_path: string}> }> }
+    const countryData = data.results?.[country]
+    if (!countryData) return []
+    const out: Array<{name: string; logo_url: string; type: string}> = []
+    for (const p of (countryData.flatrate ?? [])) {
+      if (p.provider_name && p.logo_path) out.push({ name: p.provider_name, logo_url: `${TMDB_LOGO}${p.logo_path}`, type: 'flatrate' })
+    }
+    for (const p of (countryData.rent ?? [])) {
+      if (p.provider_name && p.logo_path && !out.find(o => o.name === p.provider_name)) out.push({ name: p.provider_name, logo_url: `${TMDB_LOGO}${p.logo_path}`, type: 'rent' })
+    }
+    return out.slice(0, 8)
+  } catch {
+    return []
   }
 }
 
@@ -140,6 +190,7 @@ export async function runBackfill(listItems: () => import('./db.js').MediaItem[]
         cast: cast.length ? JSON.stringify(cast) : null,
         genres: details.genres.length ? JSON.stringify(details.genres) : null,
         runtime: details.runtime ?? null,
+        seasons_count: details.seasons_count ?? null,
       })
       updated++
     } catch { /* tolerated */ }

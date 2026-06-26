@@ -8,7 +8,10 @@ let catalogItems = []       // normalized flat array
 let statusMap = {}          // string(media_id) -> string(user_id) -> {state, score}
 let searchQuery = ''
 let activeTab = 'home'
+let sortBy = 'title'
+let filterGenre = ''
 let triageMode = false
+let sseSource = null
 let selectedItems = new Set()
 let openDetailId = null   // media_id of currently open detail modal (null = closed)
 let recPersonalData = null  // cached GET /api/recommend response
@@ -137,7 +140,9 @@ async function openLibrary() {
       `<div class="mozi-error">Könyvtár nem töltött be: ${escapeHtml(err.message)}</div>`
     return
   }
+  updateGenreChips()
   renderCatalog()
+  startSSE()
 }
 
 async function refreshStatus() {
@@ -158,7 +163,7 @@ const STATES = [
 
 function getUserStatus(mediaId, userId) {
   const uid = String(userId ?? activeUser?.id)
-  return (statusMap[String(mediaId)] || {})[uid] || { state: 'none', score: null }
+  return (statusMap[String(mediaId)] || {})[uid] || { state: 'none', score: null, current_season: null, current_episode: null }
 }
 
 function calcAvgScore(mediaId) {
@@ -179,19 +184,29 @@ async function moziSetState(mediaId, state, score, opts = {}) {
 
   // Optimistic update
   statusMap[mid] = statusMap[mid] || {}
-  statusMap[mid][uid] = { state, score: state === 'seen' ? (score ?? prev.score) : null }
+  statusMap[mid][uid] = {
+    state, score: state === 'seen' ? (score ?? prev.score) : null,
+    current_season: opts.current_season !== undefined ? opts.current_season : (prev.current_season ?? null),
+    current_episode: opts.current_episode !== undefined ? opts.current_episode : (prev.current_episode ?? null),
+  }
   if (!opts.batchRender) renderCatalog()
   refreshDetailIfOpen(mediaId)
 
   try {
     const body = { state }
     if (state === 'seen') body.score = score ?? prev.score ?? null
+    if (opts.current_season != null) body.current_season = opts.current_season
+    if (opts.current_episode != null) body.current_episode = opts.current_episode
     const data = await apiFetch(`/api/status/${mediaId}/${activeUser.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    statusMap[mid][uid] = { state: data.state, score: data.score ?? null }
+    statusMap[mid][uid] = {
+      state: data.state, score: data.score ?? null,
+      current_season: data.current_season ?? null,
+      current_episode: data.current_episode ?? null,
+    }
     if (!opts.batchRender) renderCatalog()
     refreshDetailIfOpen(mediaId)
   } catch (err) {
@@ -255,7 +270,8 @@ async function moziApplyBulkState(state) {
   ids.forEach(id => {
     const mid = String(id)
     statusMap[mid] = statusMap[mid] || {}
-    statusMap[mid][userId] = { state, score: null }
+    const prev = statusMap[mid][userId] || {}
+    statusMap[mid][userId] = { state, score: null, current_season: prev.current_season ?? null, current_episode: prev.current_episode ?? null }
   })
   selectedItems.clear()
   triageMode = false
@@ -282,7 +298,7 @@ async function moziApplyBulkState(state) {
         const d = r.value
         const mid = String(ids[i])
         statusMap[mid] = statusMap[mid] || {}
-        statusMap[mid][userId] = { state: d.state, score: d.score ?? null }
+        statusMap[mid][userId] = { state: d.state, score: d.score ?? null, current_season: d.current_season ?? null, current_episode: d.current_episode ?? null }
       }
     })
     renderCatalog()
@@ -308,7 +324,48 @@ function filterItems() {
   } else if (activeTab === 'not_interested') {
     items = items.filter(i => getUserStatus(i.id).state === 'not_interested')
   }
+  if (filterGenre) {
+    items = items.filter(i =>
+      String(i.genres || '').split(', ').some(g => g.toLowerCase() === filterGenre.toLowerCase())
+    )
+  }
+  if (sortBy === 'year_new') items = [...items].sort((a, b) => (b.year || 0) - (a.year || 0))
+  else if (sortBy === 'year_old') items = [...items].sort((a, b) => (a.year || 0) - (b.year || 0))
+  else if (sortBy === 'score') {
+    items = [...items].sort((a, b) => (getUserStatus(b.id).score || 0) - (getUserStatus(a.id).score || 0))
+  }
   return items
+}
+
+function setSortBy(val) {
+  sortBy = val
+  renderCatalog()
+}
+
+function setGenreFilter(genre) {
+  filterGenre = filterGenre === genre ? '' : genre
+  updateGenreChips()
+  renderCatalog()
+}
+
+function updateGenreChips() {
+  const chipContainer = document.getElementById('moziGenreChips')
+  if (!chipContainer) return
+  if (activeTab === 'home' || activeTab === 'ajanlok' || searchQuery) {
+    chipContainer.innerHTML = ''
+    return
+  }
+  const genreCount = {}
+  for (const item of catalogItems) {
+    const genres = String(item.genres || '').split(', ').filter(Boolean)
+    for (const g of genres) {
+      if (g) genreCount[g] = (genreCount[g] || 0) + 1
+    }
+  }
+  const sorted = Object.entries(genreCount).sort((a, b) => b[1] - a[1]).slice(0, 14)
+  chipContainer.innerHTML = sorted.map(([g]) =>
+    `<button class="mozi-genre-chip${filterGenre === g ? ' active' : ''}" onclick="setGenreFilter('${escapeHtml(g)}')">${escapeHtml(g)}</button>`
+  ).join('')
 }
 
 // ── Card rendering ─────────────────────────────────────────────────────────
@@ -391,7 +448,7 @@ function renderCard(item) {
   const safeId = escapeHtml(String(id))
   const title = escapeHtml(String(item.title || ''))
   const year = item.year ? escapeHtml(String(item.year)) : ''
-  const { state, score } = getUserStatus(id)
+  const { state, score, current_season, current_episode } = getUserStatus(id)
 
   const poster = item.poster_url
     ? `<img class="mozi-card-poster" src="${escapeHtml(item.poster_url)}" alt="${title}" loading="lazy">`
@@ -401,6 +458,10 @@ function renderCard(item) {
   const otherUsersHtml = renderOtherUsers(id)
   const stateBtns = renderStateBtns(id, state)
   const scoreRow = state === 'seen' ? renderScoreRow(id, score) : ''
+
+  const episodeBadge = (state === 'in_progress' && item.type === 'series' && (current_season || current_episode))
+    ? `<div class="mozi-episode-badge">S${current_season || 1}E${current_episode || 1}</div>`
+    : ''
 
   const isSelected = selectedItems.has(id)
   const checkboxHtml = triageMode
@@ -416,6 +477,7 @@ function renderCard(item) {
     <div class="mozi-card-body">
       <div class="mozi-card-title">${title}</div>
       ${yearHtml}
+      ${episodeBadge}
       ${otherUsersHtml}
       ${stateBtns}
       ${scoreRow}
@@ -460,13 +522,40 @@ function renderAllOpinions(mediaId) {
 }
 
 function renderDetailStatePicker(mediaId) {
-  const { state, score } = getUserStatus(mediaId)
+  const { state, score, current_season, current_episode } = getUserStatus(mediaId)
   const btns = renderStateBtns(mediaId, state, { inDetail: true })
   const scoreRow = state === 'seen' ? renderScoreRow(mediaId, score) : ''
+  const item = catalogItems.find(i => i.id === mediaId)
+  const episodeTracker = (state === 'in_progress' && item?.type === 'series')
+    ? renderEpisodeTracker(mediaId, current_season, current_episode, item.seasons_count)
+    : ''
   return `<div class="mozi-detail-picker">
     <div class="mozi-detail-picker-label">A te véleményed</div>
-    ${btns}${scoreRow}
+    ${btns}${scoreRow}${episodeTracker}
   </div>`
+}
+
+function renderEpisodeTracker(mediaId, season, episode, maxSeasons) {
+  const s = season ?? 1
+  const e = episode ?? 1
+  const maxAttr = maxSeasons ? ` max="${maxSeasons}"` : ''
+  return `<div class="mozi-episode-tracker">
+    <div class="mozi-episode-tracker-label">Hol tartasz</div>
+    <div class="mozi-episode-tracker-inputs">
+      <label>Évad <input type="number" class="mozi-episode-input" id="epTrackerSeason" value="${s}" min="1"${maxAttr}></label>
+      <label>Epizód <input type="number" class="mozi-episode-input" id="epTrackerEpisode" value="${e}" min="1"></label>
+      <button class="mozi-btn-ghost" onclick="event.stopPropagation();moziSaveEpisode(${mediaId})">Mentés</button>
+    </div>
+    ${maxSeasons ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px">${maxSeasons} évad összesen</div>` : ''}
+  </div>`
+}
+
+async function moziSaveEpisode(mediaId) {
+  const s = parseInt(document.getElementById('epTrackerSeason')?.value || '1', 10)
+  const e = parseInt(document.getElementById('epTrackerEpisode')?.value || '1', 10)
+  if (isNaN(s) || isNaN(e) || s < 1 || e < 1) return
+  await moziSetState(mediaId, 'in_progress', null, { current_season: s, current_episode: e })
+  showToast(`S${s}E${e} mentve.`)
 }
 
 function renderDetailBody(item) {
@@ -505,18 +594,28 @@ function renderDetailBody(item) {
        </div>`
     : ''
 
+  const providersHtml = item.tmdb_id
+    ? `<div id="detailProviders" class="mozi-detail-providers mozi-loading-small">Elérhetőség...</div>`
+    : ''
+  const similarHtml = item.tmdb_id
+    ? `<div class="mozi-detail-section-label">Hasonló filmek</div>
+       <div id="detailSimilar" class="mozi-detail-similar mozi-loading-small">Betöltés...</div>`
+    : ''
+
   return `<div class="mozi-detail-layout">
     <div class="mozi-detail-poster-wrap">${poster}</div>
     <div class="mozi-detail-info">
       <h2 class="mozi-detail-title">${title}${year}</h2>
       ${metaHtml}
       ${trailerHtml}
+      ${providersHtml}
       ${overviewHtml}
       ${castHtml}
       <div class="mozi-detail-section-label">Vélemények</div>
       ${opinions}
       ${picker}
       ${adminDelete}
+      ${similarHtml}
     </div>
   </div>`
 }
@@ -644,6 +743,74 @@ function moziOpenDetail(mediaId) {
   document.getElementById('moziDetailBody').innerHTML = renderDetailBody(item)
   overlay.classList.add('active')
   document.body.style.overflow = 'hidden'
+  loadDetailExtras(item)
+}
+
+function loadDetailExtras(item) {
+  loadDetailProviders(item)
+  loadDetailSimilar(item)
+}
+
+async function loadDetailProviders(item) {
+  const el = document.getElementById('detailProviders')
+  if (!el || !item.tmdb_id) return
+  try {
+    const data = await apiFetch(`/api/catalog/${item.id}/providers`)
+    if (!document.getElementById('detailProviders')) return
+    if (!data.providers?.length) { el.style.display = 'none'; return }
+    el.innerHTML = `<div class="mozi-providers-label">Elérhető Magyarországon:</div>
+      <div class="mozi-providers-list">${data.providers.map(p =>
+        `<span class="mozi-provider-chip${p.type === 'flatrate' ? ' mozi-provider-chip--flat' : ''}">
+          <img src="${escapeHtml(p.logo_url)}" alt="${escapeHtml(p.name)}" class="mozi-provider-logo" onerror="this.style.display='none'">
+          <span>${escapeHtml(p.name)}</span>
+          ${p.type !== 'flatrate' ? `<span class="mozi-provider-type">${p.type === 'rent' ? 'Bérlés' : 'Vásárlás'}</span>` : ''}
+        </span>`
+      ).join('')}</div>`
+  } catch {
+    const el2 = document.getElementById('detailProviders')
+    if (el2) el2.style.display = 'none'
+  }
+}
+
+async function loadDetailSimilar(item) {
+  const el = document.getElementById('detailSimilar')
+  if (!el || !item.tmdb_id) return
+  try {
+    const data = await apiFetch(`/api/catalog/${item.id}/similar`)
+    if (!document.getElementById('detailSimilar')) return
+    if (!data.similar?.length) { el.textContent = ''; return }
+    el.innerHTML = `<div class="mozi-similar-grid">${data.similar.map(s =>
+      `<div class="mozi-similar-card" onclick="moziOpenOrAddSimilar(${s.tmdb_id},'${escapeHtml(s.title).replace(/'/g, "\\'")}','${s.type}')">
+        ${s.poster_url
+          ? `<img src="${escapeHtml(s.poster_url)}" alt="${escapeHtml(s.title)}" class="mozi-similar-poster" loading="lazy">`
+          : `<div class="mozi-similar-poster-empty"></div>`}
+        <div class="mozi-similar-title">${escapeHtml(s.title)}</div>
+        ${s.year ? `<div class="mozi-similar-year">${s.year}</div>` : ''}
+      </div>`
+    ).join('')}</div>`
+  } catch {
+    const el2 = document.getElementById('detailSimilar')
+    if (el2) el2.textContent = ''
+  }
+}
+
+async function moziOpenOrAddSimilar(tmdbId, title, type) {
+  const existing = catalogItems.find(i => i.tmdb_id === tmdbId)
+  if (existing) { moziOpenDetail(existing.id); return }
+  if (!window.confirm(`Hozzáadod a katalógushoz: "${title}"?`)) return
+  try {
+    const data = await apiFetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: activeUser.id, type, title }),
+    })
+    const item = data.item
+    if (item) { catalogItems.push(item); renderCatalog() }
+    showToast(`Hozzáadva: ${item?.title || title}`)
+    if (item) moziOpenDetail(item.id)
+  } catch (err) {
+    showToast('Hiba: ' + err.message)
+  }
 }
 
 function moziCloseDetail() {
@@ -667,6 +834,7 @@ function refreshDetailIfOpen(mediaId) {
   const item = catalogItems.find(i => i.id === mediaId)
   if (!item) return
   document.getElementById('moziDetailBody').innerHTML = renderDetailBody(item)
+  loadDetailExtras(item)
 }
 
 // ── Admin panel (tabbed: Felhasználók / Katalógus / Ajánló) ────────────────
@@ -756,7 +924,20 @@ function renderAjanlokTab() {
 }
 
 function renderBeallitasokTab() {
-  return `<div class="mozi-admin-section" id="beallitasokSection">
+  return `<div class="mozi-admin-section">
+    <div class="mozi-block-header">Adatbázis biztonsági mentés</div>
+    <p class="mozi-admin-hint">Letölti az adatbázis fájlt (<code>moziradar.db</code>), amely tartalmazza az összes filmet, értékelést és felhasználót.</p>
+    <button class="mozi-btn-ghost" onclick="downloadBackup()">⬇ Backup letöltése</button>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;color:var(--text-muted)">Hogyan állítsd vissza?</summary>
+      <div class="mozi-admin-hint" style="margin-top:6px;line-height:1.7">
+        1. Állítsd le a Dockert: <code>docker compose down</code><br>
+        2. Másold a letöltött <code>.db</code> fájlt a Docker volume-ba:<br>
+        <code>docker run --rm -v moziradar_data:/data -v .:/backup alpine cp /backup/moziradar-backup-*.db /data/moziradar.db</code><br>
+        3. Indítsd újra: <code>docker compose up -d</code>
+      </div>
+    </details>
+  </div>
+  <div class="mozi-admin-section" id="beallitasokSection">
     <div class="mozi-block-header">Média mappa</div>
     <p class="mozi-admin-hint">A helyi filmek mappájának elérési útja. Mentés után újra kell indítani a Dockert.</p>
     <div class="mozi-setup-field" style="margin-bottom:8px">
@@ -1628,6 +1809,9 @@ function renderCatalog() {
   const triageToggle = document.getElementById('moziTriageToggle')
   if (triageToggle) triageToggle.hidden = (activeTab !== 'none' || !!searchQuery)
 
+  const sfRow = document.getElementById('moziSortFilterRow')
+  if (sfRow) sfRow.hidden = (!!searchQuery || activeTab === 'home' || activeTab === 'ajanlok')
+
   if (searchQuery) {
     grid.classList.remove('mozi-catalog-blocks', 'mozi-catalog-ajanlok')
     grid.innerHTML = items.length ? items.map(renderCard).join('') : '<div class="mozi-empty">Nincs találat.</div>'
@@ -1861,6 +2045,35 @@ function renderProfileModal(user, stats) {
   </div>`
 }
 
+// ── SSE auto-refresh ────────────────────────────────────────────────────────
+function startSSE() {
+  if (sseSource) return
+  sseSource = new EventSource('/api/events')
+  sseSource.onmessage = async (e) => {
+    if (!activeUser) return
+    if (!document.getElementById('pageLibrary')?.classList.contains('active')) return
+    try {
+      const { type } = JSON.parse(e.data)
+      if (type === 'status_change') {
+        await refreshStatus()
+        renderCatalog()
+        if (openDetailId) refreshDetailIfOpen(openDetailId)
+      } else if (type === 'catalog_change') {
+        const catData = await apiFetch('/api/catalog')
+        catalogItems = normalizeCatalog(catData)
+        updateGenreChips()
+        renderCatalog()
+      }
+    } catch { /* ignore parse errors */ }
+  }
+}
+
+// ── Admin: backup ────────────────────────────────────────────────────────────
+function downloadBackup() {
+  if (!activeUser?.is_admin) return
+  window.location.href = `/api/admin/backup?adminId=${activeUser.id}`
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 async function init() {
   initSearch()
@@ -1951,6 +2164,11 @@ async function init() {
       errEl.hidden = false
     }
   })
+
+  // Register service worker for PWA
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* tolerated */ })
+  }
 
   // Check if first-run setup is needed
   const setupStatus = await apiFetch('/api/setup/status')

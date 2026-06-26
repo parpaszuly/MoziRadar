@@ -11,11 +11,12 @@ import {
   listItemsNeedingEnrichment,
   findMediaItemByTmdbId,
   getAllSettings, getSetting, setSetting,
-  hasAnyUsers,
+  hasAnyUsers, backupDatabase,
   MEDIA_USER_VALID_STATES,
   type RecRow, type WatchlistRow, type MediaItem,
 } from '../db.js'
-import { tmdbSearch, tmdbFetchCast, tmdbFetchDetails, runBackfill } from '../tmdb.js'
+import { tmdbSearch, tmdbFetchCast, tmdbFetchDetails, tmdbFetchSimilar, tmdbFetchProviders, runBackfill } from '../tmdb.js'
+import { addSseClient, broadcastEvent } from '../events.js'
 import { generateRecommendations } from '../ai.js'
 import { json, parseBody } from './helpers.js'
 import { logger } from '../logger.js'
@@ -108,6 +109,41 @@ function aggregateWatchlistRows(rows: WatchlistRow[]): WatchlistItem[] {
 export async function handleApi(ctx: RouteContext): Promise<boolean> {
   const { path, method } = ctx
   if (!path.startsWith('/api/')) return false
+
+  // SSE — long-lived connection, must be outside the try/catch
+  if (path === '/api/events' && method === 'GET') {
+    ctx.res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    })
+    ctx.res.write('data: {"type":"connected"}\n\n')
+    addSseClient(ctx.res)
+    const hb = setInterval(() => {
+      try { ctx.res.write(':ping\n\n') } catch { clearInterval(hb) }
+    }, 25_000)
+    ctx.res.on('close', () => clearInterval(hb))
+    return true
+  }
+
+  // Backup — returns binary, must be outside the try/catch to avoid header conflict on error
+  if (path === '/api/admin/backup' && method === 'GET') {
+    if (!requireAdmin(ctx.res, ctx.url.searchParams.get('adminId'))) return true
+    try {
+      const data = backupDatabase()
+      const filename = `moziradar-backup-${new Date().toISOString().slice(0, 10)}.db`
+      ctx.res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': String(data.length),
+      })
+      ctx.res.end(data)
+    } catch (err) {
+      json(ctx.res, { error: 'Backup sikertelen: ' + (err as Error).message }, 500)
+    }
+    return true
+  }
 
   try {
 
@@ -265,9 +301,11 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
             cast: cast.length ? JSON.stringify(cast) : null,
             genres: details.genres.length ? JSON.stringify(details.genres) : null,
             runtime: details.runtime ?? null,
+            seasons_count: details.seasons_count ?? null,
           })
         } catch { /* tolerated */ }
       }
+      broadcastEvent('catalog_change')
       json(ctx.res, { ok: true, item: getMediaItem(item.id)! }, 201)
       return true
     }
@@ -301,6 +339,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       const id = parseInt(catalogItemMatch[1], 10)
       const result = deleteMediaItem(id)
       if (!result.deleted) { json(ctx.res, { error: 'Nem található' }, 404); return true }
+      broadcastEvent('catalog_change')
       json(ctx.res, { ok: true, deleted_id: id, title: result.title })
       return true
     }
@@ -329,8 +368,33 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         cast: cast.length ? JSON.stringify(cast) : null,
         genres: details.genres.length ? JSON.stringify(details.genres) : null,
         runtime: details.runtime ?? null,
+        seasons_count: details.seasons_count ?? null,
       })
       json(ctx.res, { ok: true, item: getMediaItem(id) })
+      return true
+    }
+
+    // ---- Similar films & watch providers ----
+
+    const similarMatch = path.match(/^\/api\/catalog\/(\d+)\/similar$/)
+    if (similarMatch && method === 'GET') {
+      const id = parseInt(similarMatch[1], 10)
+      const item = getMediaItem(id)
+      if (!item) { json(ctx.res, { error: 'Nem található' }, 404); return true }
+      if (!item.tmdb_id) { json(ctx.res, { similar: [] }); return true }
+      const similar = await tmdbFetchSimilar(item.type, item.tmdb_id)
+      json(ctx.res, { similar })
+      return true
+    }
+
+    const providersMatch = path.match(/^\/api\/catalog\/(\d+)\/providers$/)
+    if (providersMatch && method === 'GET') {
+      const id = parseInt(providersMatch[1], 10)
+      const item = getMediaItem(id)
+      if (!item) { json(ctx.res, { error: 'Nem található' }, 404); return true }
+      if (!item.tmdb_id) { json(ctx.res, { providers: [] }); return true }
+      const providers = await tmdbFetchProviders(item.type, item.tmdb_id)
+      json(ctx.res, { providers })
       return true
     }
 
@@ -347,7 +411,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       const userId = parseInt(statusMatch[2], 10)
       if (!getMediaItem(mediaId)) { json(ctx.res, { error: 'media_id nem található' }, 404); return true }
       if (!getMediaUserById(userId)) { json(ctx.res, { error: 'user_id nem található' }, 404); return true }
-      const body = await parseBody<{ state?: string; score?: number | null }>(ctx.req, ctx.res)
+      const body = await parseBody<{ state?: string; score?: number | null; current_season?: number | null; current_episode?: number | null }>(ctx.req, ctx.res)
       if (!body) return true
       if (body.state !== undefined && !MEDIA_USER_VALID_STATES.has(body.state)) {
         json(ctx.res, { error: `state: ${[...MEDIA_USER_VALID_STATES].join(', ')}` }, 400); return true
@@ -357,9 +421,12 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
           json(ctx.res, { error: 'score: 1-10 közötti egész szám' }, 400); return true
         }
       }
-      upsertMediaUserStatus(mediaId, userId, { state: body.state, score: body.score })
+      const current_season = typeof body.current_season === 'number' && body.current_season >= 1 ? body.current_season : body.current_season === null ? null : undefined
+      const current_episode = typeof body.current_episode === 'number' && body.current_episode >= 1 ? body.current_episode : body.current_episode === null ? null : undefined
+      upsertMediaUserStatus(mediaId, userId, { state: body.state, score: body.score, current_season, current_episode })
       const all = getAllMediaUserStatuses()
-      const result = all[mediaId]?.[userId] ?? { state: body.state ?? 'none', score: body.score ?? null }
+      const result = all[mediaId]?.[userId] ?? { state: body.state ?? 'none', score: body.score ?? null, current_season: null, current_episode: null }
+      broadcastEvent('status_change')
       json(ctx.res, { ok: true, media_id: mediaId, user_id: userId, ...result })
       return true
     }
@@ -592,7 +659,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
             const enrichment = await tmdbSearch(mediaItem.type, mediaItem.title)
             if (enrichment.tmdb_id) {
               const [cast, details] = await Promise.all([tmdbFetchCast(mediaItem.type, enrichment.tmdb_id), tmdbFetchDetails(mediaItem.type, enrichment.tmdb_id)])
-              updateMediaItemEnrichment(mediaItem.id, { tmdb_id: enrichment.tmdb_id, poster_url: rec.poster_url ? undefined : (enrichment.poster_url ?? undefined), overview: rec.overview ? undefined : (enrichment.overview ?? undefined), year: rec.year ? undefined : (enrichment.year ?? undefined), cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
+              updateMediaItemEnrichment(mediaItem.id, { tmdb_id: enrichment.tmdb_id, poster_url: rec.poster_url ? undefined : (enrichment.poster_url ?? undefined), overview: rec.overview ? undefined : (enrichment.overview ?? undefined), year: rec.year ? undefined : (enrichment.year ?? undefined), cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null, seasons_count: details.seasons_count ?? null })
               mediaItem = getMediaItem(mediaItem.id)!
             }
           } catch { /* tolerated */ }
@@ -740,7 +807,7 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
         const item = createMediaItem({ type, title: finalTitle, year: (tmdbResult.year ?? year) ?? undefined, source: 'scan' })
         try {
           const [cast, details] = await Promise.all([tmdbFetchCast(type, tmdbResult.tmdb_id), tmdbFetchDetails(type, tmdbResult.tmdb_id)])
-          updateMediaItemEnrichment(item.id, { tmdb_id: tmdbResult.tmdb_id, poster_url: tmdbResult.poster_url ?? undefined, overview: tmdbResult.overview ?? undefined, year: tmdbResult.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null })
+          updateMediaItemEnrichment(item.id, { tmdb_id: tmdbResult.tmdb_id, poster_url: tmdbResult.poster_url ?? undefined, overview: tmdbResult.overview ?? undefined, year: tmdbResult.year ?? undefined, cast: cast.length ? JSON.stringify(cast) : null, genres: details.genres.length ? JSON.stringify(details.genres) : null, runtime: details.runtime ?? null, seasons_count: details.seasons_count ?? null })
         } catch { /* tolerated */ }
         added++
       }

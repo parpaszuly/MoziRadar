@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { DB_PATH } from './config.js'
 
@@ -48,6 +48,9 @@ db.exec(`
   )
 `)
 try { db.exec(`ALTER TABLE media_users ADD COLUMN taste_profile TEXT`) } catch { /* already exists */ }
+try { db.exec(`ALTER TABLE media_items ADD COLUMN seasons_count INTEGER`) } catch { /* already exists */ }
+try { db.exec(`ALTER TABLE media_user_status ADD COLUMN current_season INTEGER`) } catch { /* already exists */ }
+try { db.exec(`ALTER TABLE media_user_status ADD COLUMN current_episode INTEGER`) } catch { /* already exists */ }
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS media_user_status (
@@ -101,6 +104,7 @@ export interface MediaItem {
   cast: string | null
   genres: string | null
   runtime: number | null
+  seasons_count: number | null
   notes: string | null
   source: string
   needs_review: number
@@ -204,7 +208,7 @@ export function updateMediaItem(id: number, data: Partial<Pick<MediaItem, 'title
 
 export function updateMediaItemEnrichment(id: number, data: {
   tmdb_id?: number; poster_url?: string; overview?: string; year?: number
-  cast?: string | null; genres?: string | null; runtime?: number | null
+  cast?: string | null; genres?: string | null; runtime?: number | null; seasons_count?: number | null
 }): boolean {
   const sets: string[] = []
   const values: unknown[] = []
@@ -215,6 +219,7 @@ export function updateMediaItemEnrichment(id: number, data: {
   if (data.cast !== undefined) { sets.push('"cast" = ?'); values.push(data.cast) }
   if (data.genres !== undefined) { sets.push('genres = ?'); values.push(data.genres) }
   if (data.runtime !== undefined) { sets.push('runtime = ?'); values.push(data.runtime) }
+  if (data.seasons_count !== undefined) { sets.push('seasons_count = ?'); values.push(data.seasons_count) }
   if (!sets.length) return false
   sets.push('updated_at = ?'); values.push(Math.floor(Date.now() / 1000))
   values.push(id)
@@ -300,33 +305,40 @@ export function hasAnyUsers(): boolean {
 
 // --- Per-user status ---
 
-export function getAllMediaUserStatuses(): Record<number, Record<number, { state: string; score: number | null }>> {
-  const rows = db.prepare('SELECT media_id, user_id, state, score FROM media_user_status').all() as {
-    media_id: number; user_id: number; state: string; score: number | null
+export function getAllMediaUserStatuses(): Record<number, Record<number, { state: string; score: number | null; current_season: number | null; current_episode: number | null }>> {
+  const rows = db.prepare('SELECT media_id, user_id, state, score, current_season, current_episode FROM media_user_status').all() as {
+    media_id: number; user_id: number; state: string; score: number | null; current_season: number | null; current_episode: number | null
   }[]
-  const out: Record<number, Record<number, { state: string; score: number | null }>> = {}
+  const out: Record<number, Record<number, { state: string; score: number | null; current_season: number | null; current_episode: number | null }>> = {}
   for (const row of rows) {
     if (!out[row.media_id]) out[row.media_id] = {}
-    out[row.media_id][row.user_id] = { state: row.state, score: row.score }
+    out[row.media_id][row.user_id] = { state: row.state, score: row.score, current_season: row.current_season, current_episode: row.current_episode }
   }
   return out
 }
 
-export function upsertMediaUserStatus(mediaId: number, userId: number, data: { state?: string; score?: number | null }): void {
+export function upsertMediaUserStatus(mediaId: number, userId: number, data: { state?: string; score?: number | null; current_season?: number | null; current_episode?: number | null }): void {
   const now = Math.floor(Date.now() / 1000)
   db.transaction(() => {
-    const existing = db.prepare('SELECT id, state, score FROM media_user_status WHERE media_id = ? AND user_id = ?')
-      .get(mediaId, userId) as { id: number; state: string; score: number | null } | undefined
+    const existing = db.prepare('SELECT id, state, score, current_season, current_episode FROM media_user_status WHERE media_id = ? AND user_id = ?')
+      .get(mediaId, userId) as { id: number; state: string; score: number | null; current_season: number | null; current_episode: number | null } | undefined
     const newState = data.state ?? existing?.state ?? 'none'
     const newScore = data.score !== undefined ? data.score : (existing?.score ?? null)
+    const newSeason = data.current_season !== undefined ? data.current_season : (existing?.current_season ?? null)
+    const newEpisode = data.current_episode !== undefined ? data.current_episode : (existing?.current_episode ?? null)
     if (existing) {
-      db.prepare('UPDATE media_user_status SET state = ?, score = ?, updated_at = ? WHERE id = ?')
-        .run(newState, newScore, now, existing.id)
+      db.prepare('UPDATE media_user_status SET state = ?, score = ?, current_season = ?, current_episode = ?, updated_at = ? WHERE id = ?')
+        .run(newState, newScore, newSeason, newEpisode, now, existing.id)
     } else {
-      db.prepare('INSERT INTO media_user_status (media_id, user_id, state, score, updated_at) VALUES (?, ?, ?, ?, ?)')
-        .run(mediaId, userId, newState, newScore, now)
+      db.prepare('INSERT INTO media_user_status (media_id, user_id, state, score, current_season, current_episode, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(mediaId, userId, newState, newScore, newSeason, newEpisode, now)
     }
   })()
+}
+
+export function backupDatabase(): Buffer {
+  db.pragma('wal_checkpoint(FULL)')
+  return readFileSync(dbPath) as Buffer
 }
 
 // --- Recommendations ---
