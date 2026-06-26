@@ -18,6 +18,7 @@ import {
 import { tmdbSearch, tmdbFetchCast, tmdbFetchDetails, runBackfill } from '../tmdb.js'
 import { generateRecommendations } from '../ai.js'
 import { json, parseBody } from './helpers.js'
+import { logger } from '../logger.js'
 import type { RouteContext } from './types.js'
 import type http from 'node:http'
 
@@ -747,7 +748,8 @@ export async function handleApi(ctx: RouteContext): Promise<boolean> {
       return true
     }
 
-  } catch {
+  } catch (err) {
+    logger.error({ err }, 'API handler error')
     json(ctx.res, { error: 'Szerver hiba' }, 500)
     return true
   }

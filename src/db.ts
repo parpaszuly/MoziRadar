@@ -539,16 +539,12 @@ export function getUserSeenProfile(userId: number): Array<{ title: string; genre
 }
 
 export function getUserExcludedTitles(userId: number, audienceKey: string): string[] {
-  const activeItems = (db.prepare(`
+  return (db.prepare(`
     SELECT LOWER(mi.title) as t
     FROM media_user_status mus
     JOIN media_items mi ON mi.id = mus.media_id
     WHERE mus.user_id = ? AND mus.state != 'none'
-  `).all(userId) as Array<{ t: string }>).map(r => r.t)
-
-  const existingRecs = (db.prepare(
-    `SELECT LOWER(title) as t FROM media_recommendations WHERE audience = ?`
-  ).all(audienceKey) as Array<{ t: string }>).map(r => r.t)
-
-  return [...new Set([...activeItems, ...existingRecs])]
+    UNION
+    SELECT LOWER(title) as t FROM media_recommendations WHERE audience = ?
+  `).all(userId, audienceKey) as Array<{ t: string }>).map(r => r.t)
 }

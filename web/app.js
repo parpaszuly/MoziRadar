@@ -424,6 +424,11 @@ function renderCard(item) {
 }
 
 // ── Detail modal ───────────────────────────────────────────────────────────
+function buildTrailerLink(item) {
+  const q = encodeURIComponent((item.title || '') + (item.year ? ` ${item.year}` : '') + ' trailer')
+  return `<a href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener noreferrer" class="mozi-trailer-link">▶ Trailer</a>`
+}
+
 function parseListField(val) {
   // Handles both comma-string and JSON array (future-proof)
   if (!val) return []
@@ -476,8 +481,7 @@ function renderDetailBody(item) {
     ? `<img class="mozi-detail-poster mozi-detail-poster--zoom" src="${escapeHtml(item.poster_url)}" alt="${title}">`
     : `<div class="mozi-detail-poster-placeholder">${item.type === 'series' ? '📺' : '🎬'}</div>`
 
-  const ytQuery = encodeURIComponent((item.title || '') + (item.year ? ` ${item.year}` : '') + ' trailer')
-  const trailerHtml = `<a href="https://www.youtube.com/results?search_query=${ytQuery}" target="_blank" rel="noopener noreferrer" class="mozi-trailer-link">▶ Trailer</a>`
+  const trailerHtml = buildTrailerLink(item)
 
   const metaParts = [runtime, genres].filter(Boolean)
   const metaHtml = metaParts.length
@@ -1284,10 +1288,9 @@ function renderExtRecDetailBody(item) {
   const reasonHtml = item.reason
     ? `<div class="mozi-detail-reason"><em>${escapeHtml(String(item.reason))}</em></div>`
     : ''
-  const ytQuery = encodeURIComponent((item.title || '') + (item.year ? ` ${item.year}` : '') + ' trailer')
-  const trailerHtml = `<a href="https://www.youtube.com/results?search_query=${ytQuery}" target="_blank" rel="noopener noreferrer" class="mozi-trailer-link">▶ Trailer</a>`
-  return `<div class="mozi-detail-top">
-    ${poster}
+  const trailerHtml = buildTrailerLink(item)
+  return `<div class="mozi-detail-layout">
+    <div class="mozi-detail-poster-wrap">${poster}</div>
     <div class="mozi-detail-info">
       <div class="mozi-detail-title">${title}${year}</div>
       ${trailerHtml}
