@@ -293,8 +293,7 @@ async function moziApplyBulkState(state) {
 function filterItems() {
   let items = catalogItems
   if (searchQuery) {
-    const q = searchQuery
-    items = items.filter(i => String(i.title || '').toLowerCase().includes(q))
+    return items.filter(i => String(i.title || '').toLowerCase().includes(searchQuery))
   }
   if (activeTab === 'home') {
     items = items.filter(i => { const s = getUserStatus(i.id).state; return s === 'watchlist' || s === 'none' || s === 'in_progress' })
@@ -474,8 +473,11 @@ function renderDetailBody(item) {
   const overview = escapeHtml(String(item.overview || ''))
 
   const poster = item.poster_url
-    ? `<img class="mozi-detail-poster" src="${escapeHtml(item.poster_url)}" alt="${title}">`
+    ? `<img class="mozi-detail-poster mozi-detail-poster--zoom" src="${escapeHtml(item.poster_url)}" alt="${title}">`
     : `<div class="mozi-detail-poster-placeholder">${item.type === 'series' ? '📺' : '🎬'}</div>`
+
+  const ytQuery = encodeURIComponent((item.title || '') + (item.year ? ` ${item.year}` : '') + ' trailer')
+  const trailerHtml = `<a href="https://www.youtube.com/results?search_query=${ytQuery}" target="_blank" rel="noopener noreferrer" class="mozi-trailer-link">▶ Trailer</a>`
 
   const metaParts = [runtime, genres].filter(Boolean)
   const metaHtml = metaParts.length
@@ -504,6 +506,7 @@ function renderDetailBody(item) {
     <div class="mozi-detail-info">
       <h2 class="mozi-detail-title">${title}${year}</h2>
       ${metaHtml}
+      ${trailerHtml}
       ${overviewHtml}
       ${castHtml}
       <div class="mozi-detail-section-label">Vélemények</div>
@@ -643,6 +646,16 @@ function moziCloseDetail() {
   openDetailId = null
   document.getElementById('moziDetailOverlay').classList.remove('active')
   document.body.style.overflow = ''
+}
+
+function moziOpenPosterZoom(url) {
+  const img = document.getElementById('moziPosterZoomImg')
+  img.src = url
+  document.getElementById('moziPosterZoom').classList.add('active')
+}
+
+function moziClosePosterZoom() {
+  document.getElementById('moziPosterZoom').classList.remove('active')
 }
 
 function refreshDetailIfOpen(mediaId) {
@@ -1607,7 +1620,13 @@ function renderCatalog() {
   const items = filterItems()
 
   const triageToggle = document.getElementById('moziTriageToggle')
-  if (triageToggle) triageToggle.hidden = (activeTab !== 'none')
+  if (triageToggle) triageToggle.hidden = (activeTab !== 'none' || !!searchQuery)
+
+  if (searchQuery) {
+    grid.classList.remove('mozi-catalog-blocks', 'mozi-catalog-ajanlok')
+    grid.innerHTML = items.length ? items.map(renderCard).join('') : '<div class="mozi-empty">Nincs találat.</div>'
+    return
+  }
 
   const blockTabs = new Set(['home', 'none', 'watchlist', 'not_interested'])
   const isBlockMode = blockTabs.has(activeTab)
@@ -1876,6 +1895,10 @@ async function init() {
   document.getElementById('moziDetailOverlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) moziCloseDetail()
   })
+  document.getElementById('moziDetailBody').addEventListener('click', e => {
+    const el = e.target.closest('.mozi-detail-poster--zoom')
+    if (el) { e.stopPropagation(); moziOpenPosterZoom(el.src) }
+  })
   document.getElementById('moziPickerClose').addEventListener('click', closePickerModal)
   document.getElementById('moziPickerOverlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) closePickerModal()
@@ -1883,7 +1906,8 @@ async function init() {
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (document.getElementById('moziPickerOverlay').classList.contains('active')) closePickerModal()
+      if (document.getElementById('moziPosterZoom').classList.contains('active')) moziClosePosterZoom()
+      else if (document.getElementById('moziPickerOverlay').classList.contains('active')) closePickerModal()
       else if (document.getElementById('moziProfileOverlay').classList.contains('active')) closeProfileModal()
       else if (document.getElementById('moziUserAdminOverlay').classList.contains('active')) closeUserAdmin()
       else if (document.getElementById('moziDetailOverlay').classList.contains('active')) moziCloseDetail()

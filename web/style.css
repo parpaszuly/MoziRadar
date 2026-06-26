@@ -261,8 +261,13 @@ body {
   display: flex;
   gap: 6px;
   margin-bottom: 20px;
-  flex-wrap: wrap;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 4px;
 }
+.mozi-tabs::-webkit-scrollbar { display: none; }
 
 .mozi-tab {
   padding: 6px 16px;
@@ -274,6 +279,8 @@ body {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .mozi-tab:hover { border-color: var(--accent); color: var(--accent); }
 .mozi-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
@@ -733,8 +740,18 @@ body.triage-active #catalogGrid { padding-bottom: 72px; }
 /* Responsive modal */
 @media (max-width: 540px) {
   .mozi-detail-layout { flex-direction: column; }
-  .mozi-detail-poster, .mozi-detail-poster-placeholder { width: 100px; }
+  .mozi-detail-poster, .mozi-detail-poster-placeholder { width: 120px; }
   .mozi-modal-body { padding: 16px; }
+  .mozi-modal-overlay { padding: 0; align-items: flex-end; }
+  .mozi-modal {
+    max-height: 92vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  .mozi-active-user-name { display: none; }
+  .mozi-header { padding: 0 12px; gap: 8px; }
+  .mozi-search-add-btn { padding: 10px 12px; font-size: 12px; }
 }
 
 /* Bulk triage bar */
@@ -1533,4 +1550,44 @@ body.triage-active #catalogGrid { padding-bottom: 72px; }
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* ── Trailer link ── */
+.mozi-trailer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+  text-decoration: none;
+  padding: 4px 11px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  transition: background var(--transition), color var(--transition);
+}
+.mozi-trailer-link:hover { background: var(--danger); color: #fff; }
+
+/* ── Detail poster zoom ── */
+.mozi-detail-poster--zoom { cursor: zoom-in; }
+
+.mozi-poster-zoom {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0,0,0,0.92);
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+.mozi-poster-zoom.active { display: flex; }
+
+.mozi-poster-zoom-img {
+  max-width: min(90vw, 460px);
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
 }
